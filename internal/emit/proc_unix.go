@@ -66,17 +66,21 @@ func waitProcessGroup(process *os.Process, bound time.Duration) {
 // opens its own descriptors close-on-exec, but one jpack itself inherited
 // without the flag would pass on to the emitter. It runs once per process,
 // before the first emitter starts (markInherited). Where /dev/fd cannot be
-// listed in full, every number from 3 below the descriptor limit (at most
-// maxInheritedScan) is marked as well; marking a number that is not open
-// does nothing.
+// listed in full, or lists nothing above standard error (a system whose
+// /dev/fd shows only 0-2, whatever is open; reading the directory itself
+// holds a descriptor above 2 where the listing is complete), every number
+// from 3 below the descriptor limit (at most maxInheritedScan) is marked as
+// well; marking a number that is not open does nothing.
 func closeInherited() {
 	entries, err := os.ReadDir(inheritedDir)
+	above := false
 	for _, entry := range entries {
 		if fd, err := strconv.Atoi(entry.Name()); err == nil && fd > 2 {
 			syscall.CloseOnExec(fd)
+			above = true
 		}
 	}
-	if err == nil {
+	if err == nil && above {
 		return
 	}
 	top := uint64(1024)

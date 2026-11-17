@@ -140,7 +140,7 @@ response or the diagnostics that refuse it. It works as follows.
   jpack exits. The emitter's own group is not the terminal's foreground group, so without this the
   terminal's interrupt would end jpack and leave the emitter running.
 - `jpack emit` checks for an interrupt just before its write phase, and refuses the run with
-  `EMIT-PROCESS` at `/command`, nothing written, if one came. Once the write has begun, the signals
+  `EMIT-PROCESS` (amended: `EMIT-INTERRUPTED`) at `/command`, nothing written, if one came. Once the write has begun, the signals
   stay caught until jpack exits, so the write finishes and leaves no staged `.jpack-emit-*` file or
   partly applied response. Before that, a second signal ends jpack at once, even during a copy. The
   write is bounded by the response's bounds, so holding the signals costs little.
@@ -341,3 +341,17 @@ happens in both modes, and the warning does not change the outcome or the exit c
   for counts, and none is added, as in ADR-0093's bounded report.
 
 `EMIT-STAGING-LEFTOVER` is provisional, like the host's other codes (VERSIONING.md).
+
+## Amendment: an interrupted run has a code of its own (2026-11-17, #468)
+
+An interrupt or `SIGTERM` that stops `jpack emit` before its write, or ends the emitter while it
+runs, is now refused with `EMIT-INTERRUPTED` at `/command`, not `EMIT-PROCESS`: every emitter may
+have exited 0, and `EMIT-PROCESS` stays the code of an emitter that could not be started, exited
+non-zero or ran out of time. `jpack emit conformance` reports an interrupt with `EMIT-INTERRUPTED`
+at the vector too, where it used `EMIT-HARNESS-BOUND`, so one code names an interrupt in both
+commands; `EMIT-HARNESS-BOUND` keeps the harness's bounds and the determinism `HOME`.
+What ended the emitter decides, not whether jpack was interrupted by the time the outcome is
+read: an emitter that exited non-zero or ran out of time is `EMIT-PROCESS` though an interrupt
+came after, and one that exited 0 with a valid response before the interrupt keeps its response.
+Of several environments' runs, none starts after the interrupt, and the refusal is reported once.
+`EMIT-INTERRUPTED` is provisional, like the host's other codes (VERSIONING.md).

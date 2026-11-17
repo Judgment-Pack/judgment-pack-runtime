@@ -144,7 +144,14 @@ func Emit(ctx context.Context, m *Manifest, others []*Manifest, in Inputs, opts 
 	seen := map[string]bool{}
 	paths := newPathSet()
 	failed := false
+	interrupted := false
 	for _, request := range requests {
+		if ctx.Err() != nil {
+			// jpack was interrupted, during an earlier run or after it: no
+			// later environment runs, and the refusal is reported once.
+			interrupted = true
+			break
+		}
 		result := Run(ctx, m, request.Version, request.Bytes, RunOptions{Root: opts.Root, Timeout: opts.Timeout, Environ: opts.Environ, Stderr: opts.Stderr})
 		record := RunRecord{Environment: request.Environment, RequestVersion: request.Version, RequestDigest: request.Digest(), StderrBytes: result.StderrBytes}
 		for _, d := range result.EmitterDiagnostics {
@@ -157,6 +164,11 @@ func Emit(ctx context.Context, m *Manifest, others []*Manifest, in Inputs, opts 
 				if !slices.Contains(report.Diagnostics, d) {
 					report.Diagnostics = append(report.Diagnostics, d)
 				}
+				continue
+			}
+			if d.Code == "EMIT-INTERRUPTED" {
+				// Reported once for the run, below.
+				interrupted = true
 				continue
 			}
 			d.Location.Environment = request.Environment
@@ -182,6 +194,9 @@ func Emit(ctx context.Context, m *Manifest, others []*Manifest, in Inputs, opts 
 			seen[file.Path] = true
 			files = append(files, file)
 		}
+	}
+	if interrupted {
+		return report.Refuse(diagnostic("EMIT-INTERRUPTED", Location{Document: DocumentManifest, Pointer: "/command"}))
 	}
 	if failed || hasError(report.Diagnostics) {
 		report.finish(false)
@@ -226,10 +241,12 @@ func Emit(ctx context.Context, m *Manifest, others []*Manifest, in Inputs, opts 
 		}
 	}
 	slices.Sort(stale)
-	// An interrupt before this point refuses the run with nothing written;
-	// a write once begun is not cut short by one (BeginWrite).
+	// An interrupt before this point refuses the run with nothing written
+	// (EMIT-INTERRUPTED: every emitter may have exited 0, so EMIT-PROCESS
+	// would blame it); a write once begun is not cut short by one
+	// (BeginWrite).
 	if ctx.Err() != nil || opts.BeginWrite != nil && !opts.BeginWrite() {
-		return report.Refuse(diagnostic("EMIT-PROCESS", Location{Document: DocumentManifest, Pointer: "/command"}))
+		return report.Refuse(diagnostic("EMIT-INTERRUPTED", Location{Document: DocumentManifest, Pointer: "/command"}))
 	}
 	written, deleted, failures := write(opts.Root, files, stale, states, parents)
 	report.Written, report.Deleted = written, deleted

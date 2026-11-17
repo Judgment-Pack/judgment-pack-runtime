@@ -25,3 +25,23 @@ func TestTheWritePhaseGate(t *testing.T) {
 		t.Fatal("the write began after a signal")
 	}
 }
+
+// A run that writes more than once ends each write: the next write is again
+// refused after a signal, and the gate no longer marks a write phase.
+func TestTheWritePhaseEnds(t *testing.T) {
+	in, stop := interruptContext()
+	defer stop()
+	if !in.beginWrite() {
+		t.Fatal("the write was refused with no signal")
+	}
+	in.endWrite()
+	if in.writing {
+		t.Fatal("the write phase did not end")
+	}
+	in.stop()
+	<-in.ctx.Done()
+	in.endWrite()
+	if in.writing || in.beginWrite() {
+		t.Fatal("a write began after a signal")
+	}
+}
