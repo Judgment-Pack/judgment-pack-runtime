@@ -2,7 +2,7 @@
 
 All notable changes to tagged releases are documented here.
 
-## Unreleased
+## 0.48.0 - 2026-11-17
 
 - **A start-up module: `github.com/Judgment-Pack/judgment-pack-runtime/startup`** (ADR-0096; spec
   RFCs 0034 §8 and 0035). A Go module of its own in `startup/`, tagged `startup/vX.Y.Z` and under a
