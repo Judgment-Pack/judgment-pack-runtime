@@ -39,7 +39,7 @@ func (a *App) emitCommand() *cobra.Command {
 			"--other-manifest names another emitter manifest of the repository, whose owns globs must not overlap this one's. " +
 			"The report is JSON on standard output (emitReportVersion 1.0.0): paths, codes, digests and counts, never a file's contents or an env value. " +
 			"Exit 0 when the files were written or are identical, 1 when --check found a difference, 2 when nothing was written or checked (an emitter failure, a refused manifest, request or response, or an unreadable path), and 3 for an unusable command line. " +
-			"The emitter is code the repository chose to run, with the user's rights: it is bounded by its environment, its time limit and its output, and is not sandboxed beyond that. It follows the accepted RFC; the registry companion's normative text and vectors are not released yet.",
+			"The emitter is code the repository chose to run, with the user's rights: it is bounded by its environment, its time limit and its output, and is not sandboxed beyond that. It follows the accepted RFC and the registry companion released as registry-v1.0.0.",
 		Example: "jpack emit --manifest tools/emit-db-bootstrap/emitter.json --registry registry.json --kinds kinds/\n" +
 			"jpack emit --manifest tools/emit-db-bootstrap/emitter.json --registry registry.json --kinds kinds/ --check",
 		Args: cobra.NoArgs,
