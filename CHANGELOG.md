@@ -4,6 +4,11 @@ All notable changes to tagged releases are documented here.
 
 ## Unreleased
 
+- **The registry line's support window** (VERSIONING.md, "The registry line"). Fixes land in the
+  latest `jpack` minor and the latest `startup/v1` tag, as before. Security fixes will also be
+  backported, from the release that names the line stable, to the previous `jpack` minor and the
+  previous `startup/v1` minor for three months after its successor is released. There is still no
+  service-level guarantee. The conformance claim in CONFORMANCE.md is unchanged.
 - **An interrupted emitter run has a code of its own** (ADR-0098). `jpack emit` sent an interrupt
   or SIGTERM before its write, or while its emitter runs, is now refused with the new provisional
   code `EMIT-INTERRUPTED` at `/command`, where it gave `EMIT-PROCESS` even when every emitter
