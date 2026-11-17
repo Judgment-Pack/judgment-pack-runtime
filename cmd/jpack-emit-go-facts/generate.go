@@ -36,7 +36,9 @@ func generate(contracts []*contract, opts options) ([]file, error) {
 		}
 	}
 	files := make([]file, 0, len(contracts)+1)
-	support, err := formatted(header + "\npackage " + opts.pkg + "\n" + supportSource)
+	supportText := header + "\npackage " + opts.pkg + "\n" + supportSource
+	total := len(supportText)
+	support, err := formatted(supportText)
 	if err != nil {
 		return nil, err
 	}
@@ -44,6 +46,17 @@ func generate(contracts []*contract, opts options) ([]file, error) {
 	for _, c := range contracts {
 		g := &writer{}
 		g.contract(c, opts.pkg)
+		// The bounds are held before go/format, whose cost grows with the
+		// source: the source written here has no indentation or alignment,
+		// so formatting never makes it shorter, and a source over a bound
+		// would be over it formatted too. The response escapes every text,
+		// which only lengthens it, so the sources' total is held to the
+		// response bound. encodeResponse holds the formatted files to the
+		// same bounds.
+		total += g.b.Len()
+		if g.b.Len() > maxFileBytes || total > maxResponseBytes {
+			return nil, errBounds
+		}
 		text, err := formatted(g.b.String())
 		if err != nil {
 			return nil, err
