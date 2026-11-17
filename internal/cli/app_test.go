@@ -112,6 +112,9 @@ func claimSurfaces(t *testing.T) []claimSurface {
 		{args: []string{"registry", "facts", "--help"}},
 		{args: []string{"registry", "check-pack", "--help"}},
 		{args: []string{"registry", "import", "--help"}},
+		// The emitter host (ADR-0098) runs an emitter and writes or checks
+		// files; it evaluates nothing and is inventoried for the phrase scans.
+		{args: []string{"emit", "--help"}},
 		// The terraform surface (ADR-0097) reads a file and evaluates nothing;
 		// it is inventoried for the phrase scans.
 		{args: []string{"terraform", "--help"}},

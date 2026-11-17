@@ -183,6 +183,23 @@ func (a *App) readRegistryForFacts(name, registryPath string, kindPaths []string
 // entries in name order, not recursively. A directory given through a
 // symbolic link is refused, as each file is when it is opened.
 func (a *App) kindFiles(name string, paths []string) ([]string, error) {
+	files, err := expandKinds(paths)
+	switch {
+	case errors.Is(err, errKindsUnreadable):
+		return nil, a.operational(name, "text", result.ExitIO, "JPS-INPUT-READ", "A --kinds directory could not be read.")
+	case errors.Is(err, errKindsTooMany):
+		return nil, a.operational(name, "text", result.ExitInvocation, "JPS-INVOCATION-INPUT", fmt.Sprintf("--kinds names more than %d kind declarations.", maxKindFiles))
+	}
+	return files, nil
+}
+
+var (
+	errKindsUnreadable = errors.New("a --kinds directory could not be read")
+	errKindsTooMany    = errors.New("--kinds names too many kind declarations")
+)
+
+// expandKinds is kindFiles without the reporting.
+func expandKinds(paths []string) ([]string, error) {
 	var files []string
 	for _, path := range paths {
 		if path == "-" {
@@ -196,7 +213,7 @@ func (a *App) kindFiles(name string, paths []string) ([]string, error) {
 		}
 		entries, err := os.ReadDir(path)
 		if err != nil {
-			return nil, a.operational(name, "text", result.ExitIO, "JPS-INPUT-READ", "A --kinds directory could not be read.")
+			return nil, errKindsUnreadable
 		}
 		var names []string
 		for _, entry := range entries {
@@ -213,7 +230,7 @@ func (a *App) kindFiles(name string, paths []string) ([]string, error) {
 		}
 	}
 	if len(files) > maxKindFiles {
-		return nil, a.operational(name, "text", result.ExitInvocation, "JPS-INVOCATION-INPUT", fmt.Sprintf("--kinds names more than %d kind declarations.", maxKindFiles))
+		return nil, errKindsTooMany
 	}
 	return files, nil
 }
