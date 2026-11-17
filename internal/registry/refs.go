@@ -3,6 +3,7 @@ package registry
 import (
 	"regexp"
 	"strings"
+	"unicode/utf8"
 )
 
 var (
@@ -36,7 +37,9 @@ func parseEntryReference(text string) (entryReference, bool) {
 	}
 	reference := entryReference{kind: kind, id: id, hasPointer: hasPointer}
 	if hasPointer {
-		if len(pointer) > 512 {
+		// At most 512 code points as written (registry companion §6.2), where
+		// a pointer pattern (§3.5) is held to 512 bytes.
+		if utf8.RuneCountInString(pointer) > 512 {
 			return entryReference{}, false
 		}
 		tokens, err := parsePointer(pointer)

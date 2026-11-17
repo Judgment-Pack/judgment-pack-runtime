@@ -4,6 +4,30 @@ All notable changes to tagged releases are documented here.
 
 ## Unreleased
 
+- **A start-up module: `github.com/Judgment-Pack/judgment-pack-runtime/startup`** (ADR-0096; spec
+  RFCs 0034 §8 and 0035). A Go module of its own in `startup/`, tagged `startup/vX.Y.Z` and under a
+  1.0 compatibility promise, with no dependency outside the standard library. A service runs it at
+  start. `ReadResolved` and `ReadResolvedFile` read one environment's resolved registry. They
+  refuse a `resolvedFormatVersion` other than exactly `1.0.0`, a document resolved for another
+  environment, one over RFC 0034 §1's bounds, a duplicate member name anywhere, and members missing,
+  unknown or out of canonical order. `Bindings` maps each secret reference to the environment
+  variable or mounted file the platform delivered it as, and reads it through `ReadEnv` or
+  `ReadFile`. Both trim exactly one trailing `\n` or `\r\n`. `ReadFile` refuses a file that is not
+  regular or that others may read, and every file outside Unix. A value is held in `Secret`, which
+  prints `[secret]` under every fmt verb, `%#v` included, and through encoding/json,
+  encoding.TextMarshaler and log/slog. Its bytes come only from `Reveal`. Nothing contacts a secret
+  store. CI runs the module's own format check, vet and tests, with a 90% coverage floor. `jpack`
+  and its output are unchanged. Tagged `startup/v0.1.0` on 8712ec3f, separately from the
+  runtime.
+
+- **A reader for Terraform plan and state JSON** (ADR-0097, proposed). Package
+  `internal/terraformfile` is part 1 of spec RFC 0038's `terraform-file` source. It reads the
+  output of `terraform show -json` in the RFC's order: sha256 and size, strict JSON, a closed
+  `format_version` table, the document's shape, a sensitivity mirror on every resource, and the
+  removal of every value marked sensitive before selection. A refusal carries only its code, the
+  file's sha256, its size and a fixed message. No command calls the reader yet, and existing
+  commands and their output are unchanged.
+
 - **`jpack terraform facts`: a plan's or a state's resources as a facts batch** (ADR-0097
   amendment). It is spec RFC 0038 §6's batch tool. `jpack terraform facts (--plan FILE | --state
   FILE) --type T[,T...]` reads the output of `terraform show -json` through the
@@ -30,15 +54,30 @@ All notable changes to tagged releases are documented here.
   times in the normal form, so the value's bound of 16 times its file cannot be lowered past them
   unnoticed.
 
-## 0.47.0 - 2026-11-16
+- **Registry diagnostics follow the registry companion's text** (registry companion §3.1, §3.3,
+  §3.4, §6.2 and §7.3).
+  - Every step-2 diagnostic of a kind declaration whose `kind` member is a kind name now carries
+    `kind` in its location (§7.3). Before, an unknown or missing member, and a bad `id` or
+    `version`, were reported without it.
+  - A schema's cycle check covers every `$ref` that names a definition, whatever else the schema
+    fails (§3.3). Before, a `$ref` that named no definition, or any other schema error, hid a
+    cycle among the definitions.
+  - An entry reference's `#pointer` is held to 512 code points as written (§6.2), not 512 bytes,
+    so a pointer of 300 two-byte code points is read. A pointer pattern (§3.5) is still at most
+    512 bytes.
+  - An `id` is read as an RFC 3986 `absolute-URI` (§3.1), by the runtime's one RFC 3986 reader
+    (ADR-0064), not by `net/url`: in ASCII, with a `%` followed by two hex digits, and `[` and `]`
+    only around an IP-literal host. `url.Parse` admitted non-ASCII and characters outside RFC 3986
+    such as `<`, `>`, `\`, `"`, `{`, `^`, `` ` `` and `|`. The rule holds a kind's and a registry's
+    `id`, a pin's `id`, and a facts contract's `id` and `source.kind.id`, as before.
+  - A pattern's size is counted on the pattern as written (§3.4, "Program size"; ADR-0093
+    amendment), not on RE2's parse, so every reader refuses the same patterns. `(ab|ac){1000}` is
+    5000 and is now `REG-KIND-PATTERN-LIMIT`; RE2's parse factored it to `a[bc]`, 2000, and
+    admitted it. The kind's total of 65,536 counts the same sizes, a pattern outside the subset
+    is still `REG-KIND-PATTERN` alone, and the code's message now says size, not instructions.
+  - The conformance claim in CONFORMANCE.md is unchanged.
 
-- **A reader for Terraform plan and state JSON** (ADR-0097, proposed). Package
-  `internal/terraformfile` is part 1 of spec RFC 0038's `terraform-file` source. It reads the
-  output of `terraform show -json` in the RFC's order: sha256 and size, strict JSON, a closed
-  `format_version` table, the document's shape, a sensitivity mirror on every resource, and the
-  removal of every value marked sensitive before selection. A refusal carries only its code, the
-  file's sha256, its size and a fixed message. No command calls the reader yet, and existing
-  commands and their output are unchanged.
+## 0.47.0 - 2026-11-16
 
 - **A registry reader: `jpack registry validate|resolve`** (ADR-0093). It reads
   a registry of entries of adopter-declared kinds, as accepted in spec RFCs 0034 and 0035: each
@@ -132,21 +171,6 @@ All notable changes to tagged releases are documented here.
   `FACTS-CHECK-LIMIT`. Both are counted by a scan before the pointer is split into tokens, so a
   long pointer costs its bytes, not its tokens (#428).
   Existing commands and their output are unchanged.
-
-- **A start-up module: `github.com/Judgment-Pack/judgment-pack-runtime/startup`** (ADR-0096; spec
-  RFCs 0034 §8 and 0035). A Go module of its own in `startup/`, tagged `startup/vX.Y.Z` and under a
-  1.0 compatibility promise, with no dependency outside the standard library. A service runs it at
-  start. `ReadResolved` and `ReadResolvedFile` read one environment's resolved registry. They
-  refuse a `resolvedFormatVersion` other than exactly `1.0.0`, a document resolved for another
-  environment, one over RFC 0034 §1's bounds, a duplicate member name anywhere, and members missing,
-  unknown or out of canonical order. `Bindings` maps each secret reference to the environment
-  variable or mounted file the platform delivered it as, and reads it through `ReadEnv` or
-  `ReadFile`. Both trim exactly one trailing `\n` or `\r\n`. `ReadFile` refuses a file that is not
-  regular or that others may read, and every file outside Unix. A value is held in `Secret`, which
-  prints `[secret]` under every fmt verb, `%#v` included, and through encoding/json,
-  encoding.TextMarshaler and log/slog. Its bytes come only from `Reveal`. Nothing contacts a secret
-  store. CI runs the module's own format check, vet and tests, with a 90% coverage floor. `jpack`
-  and its output are unchanged.
 
 - **An outcome gate on `experimental evaluate`** (#422, ADR-0092; EXPERIMENTAL). With
   `--require-outcome a,b`, a single run or a batch exits 0 when every item produced a disposition
