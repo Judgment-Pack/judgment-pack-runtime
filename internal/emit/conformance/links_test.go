@@ -457,6 +457,18 @@ func TestALinkTheCopyCannotLeaveOutIsRefused(t *testing.T) {
 				t.Fatal(err)
 			}
 		}},
+		// Threaded git reads the entries at the offset table's offsets, so
+		// the index is not read, as an unreadable one is not (#475).
+		"an index entry offset table": {link: "out", index: func(t *testing.T, root string) {
+			ieot := gitindextest.Extension("IEOT", make([]byte, 4))
+			b := gitindextest.Builder{Version: 4, Entries: tracked, Extensions: [][]byte{ieot}}
+			if err := os.MkdirAll(filepath.Join(root, ".git"), 0o755); err != nil {
+				t.Fatal(err)
+			}
+			if err := os.WriteFile(filepath.Join(root, ".git", "index"), b.Bytes(), 0o644); err != nil {
+				t.Fatal(err)
+			}
+		}},
 	}
 	for name, c := range cases {
 		t.Run(name, func(t *testing.T) {

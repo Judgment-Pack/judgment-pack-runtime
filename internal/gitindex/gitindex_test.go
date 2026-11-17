@@ -120,10 +120,10 @@ func TestParseVersion4Compression(t *testing.T) {
 }
 
 // Optional extensions, signature 'A' to 'Z', are passed over, whatever they
-// hold.
+// hold, but for the two of threaded reading.
 func TestParsePassesOverOptionalExtensions(t *testing.T) {
 	var extensions [][]byte
-	for _, signature := range []string{"TREE", "REUC", "UNTR", "FSMN", "EOIE", "IEOT", "ZZZZ"} {
+	for _, signature := range []string{"TREE", "REUC", "UNTR", "FSMN", "ZZZZ"} {
 		extensions = append(extensions, gitindextest.Extension(signature, []byte("\x00anything\xff")))
 	}
 	extensions = append(extensions, gitindextest.Extension("TREE", nil))
@@ -131,6 +131,40 @@ func TestParsePassesOverOptionalExtensions(t *testing.T) {
 		data := builder{Version: version, Entries: []entry{{Path: "a"}, {Path: "b/c"}}, Extensions: extensions}.Bytes()
 		if got, _, err := paths(data); err != nil || !slices.Equal(got, []string{"a", "b/c"}) {
 			t.Errorf("version %d: %q %v", version, got, err)
+		}
+	}
+}
+
+// The extensions of threaded reading, the index entry offset table (IEOT)
+// and the end of index entries (EOIE), are refused in each version, alone,
+// after another extension, and with their real layouts: git reads the
+// entries in blocks at the table's offsets, so a table that disagrees with
+// the entries gives git other paths than a reading in order.
+func TestParseRefusesTheOffsetTable(t *testing.T) {
+	entries := []entry{{Path: "a/b"}, {Path: "a/c"}, {Path: "d"}}
+	// IEOT: a version, then one block's offset and entry count; EOIE: the
+	// offset of the extensions and a hash, both given as zeros here.
+	ieot := gitindextest.Extension("IEOT", binary.BigEndian.AppendUint32(binary.BigEndian.AppendUint32(binary.BigEndian.AppendUint32(nil, 1), 12), 3))
+	eoie := gitindextest.Extension("EOIE", make([]byte, 4+sha1.Size))
+	tree := gitindextest.Extension("TREE", nil)
+	for _, version := range []uint32{2, 4} {
+		for name, extensions := range map[string][][]byte{
+			"IEOT":        {ieot},
+			"EOIE":        {eoie},
+			"TREE, IEOT":  {tree, ieot},
+			"IEOT, EOIE":  {ieot, eoie},
+			"EOIE, empty": {gitindextest.Extension("EOIE", nil)},
+			"IEOT, empty": {gitindextest.Extension("IEOT", nil)},
+		} {
+			data := builder{Version: version, Entries: entries, Extensions: extensions}.Bytes()
+			if got, err := Parse(data, func(Entry) {}); !errors.Is(err, ErrFormat) || got != 0 {
+				t.Errorf("version %d, %s: %d %v", version, name, got, err)
+			}
+		}
+		// The control: the same index with TREE alone is read.
+		data := builder{Version: version, Entries: entries, Extensions: [][]byte{tree}}.Bytes()
+		if got, _, err := paths(data); err != nil || !slices.Equal(got, []string{"a/b", "a/c", "d"}) {
+			t.Errorf("version %d, control: %q %v", version, got, err)
 		}
 	}
 }
