@@ -21,8 +21,8 @@ All notable changes to tagged releases are documented here.
   emitters, has one row: its severity, the test that asserts it, a recorded mutant that test
   kills, and whether the code is provisional. The new `mutation-table` check reads the codes from
   their source tables and fails when a code has no row, a row's code no longer exists, a row's
-  severity or mutant site does not match the source, or a row's test is not one `go test -list`
-  lists. No product behaviour changes. The conformance claim in CONFORMANCE.md is unchanged.
+  severity or mutant site does not match the source, a row's test is not one `go test -list`
+  lists, or no string in that test names a row's subtest. No product behaviour changes. The conformance claim in CONFORMANCE.md is unchanged.
 
 ## 0.48.0 - 2026-11-17
 

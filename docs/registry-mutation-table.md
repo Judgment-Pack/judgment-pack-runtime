@@ -24,7 +24,8 @@ The rows follow from the source; nobody lists the codes by hand. The codes are:
 `scripts/check-mutation-table.py` (the `mutation-table` check in `dev.json`) reads the codes from
 those tables and fails when a code has no row, when a row's code no longer exists, when a row's
 severity is not the one its table states, when a row's mutant site is not a function of a non-test
-Go file, or when `go test -list` does not list the row's test in its package. The check does not
+Go file, when `go test -list` does not list the row's test in its package, or when no string literal in
+that test names the row's subtest (as `go test` prints it). The check does not
 run the mutants; a reviewer does.
 
 ## Columns

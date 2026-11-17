@@ -12,7 +12,8 @@ resolved through its package's constants.
 Fails on a code with no row or with two, a row whose code no longer exists, a row whose severity
 is not the one its code table states, a row whose mutant site names no function of a non-test Go
 file, and a row whose test `go test -list` does not list in the row's package (for `TestX/sub`,
-the parent `TestX` must be listed). Run from the repository root. Standard library only; it runs
+the parent `TestX` must be listed, and a string literal in its body must name `sub` as `go test`
+prints it, spaces as underscores). Run from the repository root. Standard library only; it runs
 `go test -list`, one package at a time.
 """
 import glob
@@ -158,6 +159,29 @@ def has_function(path, name):
     return re.search(r'^func (?:\([^)]*\) )?%s(?:\[[^\]]*\])?\(' % re.escape(name), text, re.M) is not None
 
 
+def test_body(package, name):
+    """The source of test function name in package's test files, or None."""
+    for file in sorted(os.listdir(package)):
+        if not file.endswith('_test.go'):
+            continue
+        text = open(os.path.join(package, file), encoding='utf-8').read()
+        start = re.search(r'^func %s\(' % re.escape(name), text, re.M)
+        if start:
+            end = re.search(r'^}', text[start.end():], re.M)
+            return text[start.start():start.end() + (end.end() if end else len(text))]
+    return None
+
+
+def subtest_named(body, part):
+    """Whether a string literal in body names subtest part as go test
+    prints it (spaces become underscores)."""
+    for literal in re.findall(r'"((?:[^"\\\n]|\\.)*)"|`([^`]*)`', body):
+        text = literal[0] or literal[1]
+        if text.replace(' ', '_') == part:
+            return True
+    return False
+
+
 def main():
     codes = derive()
     rows = read_table()
@@ -190,6 +214,12 @@ def main():
             problems.append('%s: package %s or test %s is not of the form ./dir and TestX or TestX/sub' % (where, package, row['test']))
             continue
         tests.setdefault(package, {}).setdefault(parent, []).append(where)
+        subtests = row['test'].split('/')[1:]
+        if subtests:
+            body = test_body(package, parent)
+            for part in subtests:
+                if body is not None and not subtest_named(body, part):
+                    problems.append('%s: no string in %s names its subtest %s' % (where, parent, part))
     for code in sorted(set(codes) - set(seen)):
         problems.append('%s: %s has no row' % (TABLE, code))
     for package in sorted(tests):
