@@ -227,8 +227,6 @@ func (v *Vector) at(file string) string {
 	return v.Name + "/" + file
 }
 
-// layoutVector checks one vector directory against the layout, by its
-// entries and their sizes, reading none of its files.
 // errTooManyEntries is walkBounded's: more entries than its limit.
 var errTooManyEntries = errors.New("conformance: more directory entries than the bound")
 
@@ -287,6 +285,8 @@ var maxVectorEntries = 64
 // directories together.
 var maxExpectedEntries = 2 * emit.MaxFiles
 
+// layoutVector checks one vector directory against the layout, by its
+// entries and their sizes, reading none of its files.
 func layoutVector(dir, name string, update bool) (*Vector, []emit.Diagnostic) {
 	v := &Vector{Name: name, Dir: dir, present: map[string]bool{}}
 	var refused []emit.Diagnostic
