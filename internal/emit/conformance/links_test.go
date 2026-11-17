@@ -469,6 +469,19 @@ func TestALinkTheCopyCannotLeaveOutIsRefused(t *testing.T) {
 				t.Fatal(err)
 			}
 		}},
+		// Git finds an EOIE at its place before the checksum, so one hidden
+		// in an optional extension's data, with an offset table that gives
+		// git the link "out" the entries in order do not hold, is refused
+		// too: the link is not left out.
+		"an end of index entries extension hidden in an optional one": {link: "out", index: func(t *testing.T, root string) {
+			b := gitindextest.HiddenOffsetTable(gitindextest.Builder{Version: 2, Entries: tracked}, gitindextest.Entry{Path: "out", Mode: gitindex.ModeLink})
+			if err := os.MkdirAll(filepath.Join(root, ".git"), 0o755); err != nil {
+				t.Fatal(err)
+			}
+			if err := os.WriteFile(filepath.Join(root, ".git", "index"), b.Bytes(), 0o644); err != nil {
+				t.Fatal(err)
+			}
+		}},
 	}
 	for name, c := range cases {
 		t.Run(name, func(t *testing.T) {

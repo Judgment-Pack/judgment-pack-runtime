@@ -169,6 +169,45 @@ func TestParseRefusesTheOffsetTable(t *testing.T) {
 	}
 }
 
+// Git finds an EOIE at a fixed place, the 32 bytes before the checksum,
+// not by reading the extensions in order, so one hidden in an optional
+// extension's data is refused in each version: with an offset table that
+// gives git an entry ("out", a link) the entries in order do not hold; with
+// a split index (`link`) git would read from the EOIE's offset; and as the
+// bytes "EOIE" alone. Nothing is visited.
+func TestParseRefusesAHiddenEndOfIndexEntries(t *testing.T) {
+	for _, version := range []uint32{2, 4} {
+		b := builder{Version: version, Entries: []entry{{Path: "a"}}, Extensions: [][]byte{gitindextest.Extension("TREE", nil)}}
+		// The body offset just after a further extension's header.
+		at := len(b.Bytes()) - sha1.Size + 8
+		link := gitindextest.Extension("link", make([]byte, sha1.Size))
+		for name, hidden := range map[string]builder{
+			"an offset table": gitindextest.HiddenOffsetTable(b, entry{Path: "out", Mode: ModeLink}),
+			"a split index": {Version: version, Entries: b.Entries, Extensions: append(slices.Clone(b.Extensions),
+				gitindextest.Extension("ZZZZ", slices.Concat(link, gitindextest.EndOfIndexEntries(at, link))))},
+			"the signature alone": {Version: version, Entries: b.Entries, Extensions: append(slices.Clone(b.Extensions),
+				gitindextest.Extension("ZZZZ", append([]byte("EOIE"), make([]byte, 28)...)))},
+		} {
+			var visited []string
+			got, err := Parse(hidden.Bytes(), func(e Entry) { visited = append(visited, e.Path) })
+			if !errors.Is(err, ErrFormat) || got != 0 || len(visited) != 0 {
+				t.Errorf("version %d, %s: %d %v %q", version, name, got, err, visited)
+			}
+		}
+		// The control: the same index with the EOIE's signature changed is
+		// read, the optional extension passed over.
+		data := bodyOf(gitindextest.HiddenOffsetTable(b, entry{Path: "out", Mode: ModeLink}).Bytes())
+		at = len(data) - 32
+		if string(data[at:at+4]) != "EOIE" {
+			t.Fatalf("version %d: no EOIE at its place", version)
+		}
+		data[at+3] = 'F'
+		if got, _, err := paths(seal(data)); err != nil || !slices.Equal(got, []string{"a"}) {
+			t.Errorf("version %d, control: %q %v", version, got, err)
+		}
+	}
+}
+
 // Every index this reader does not read is refused, never read in part:
 // ErrFormat, or ErrBound past a bound.
 func TestParseRefusals(t *testing.T) {
