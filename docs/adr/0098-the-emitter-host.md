@@ -135,6 +135,10 @@ response or the diagnostics that refuse it. It works as follows.
   to 2 s after that kill; past it, `HOME` is removed anyway and the report is unchanged. A process
   that calls `setsid` (or `setpgid`) leaves the group and escapes this. Windows has no process
   groups, so there only the emitter itself is killed.
+- An interrupt or `SIGTERM` to `jpack emit` or `jpack emit conformance` cancels the run as the
+  limit does: the group is killed, `HOME` (and the harness's repository copy) is removed, and then
+  jpack exits. The emitter's own group is not the terminal's foreground group, so without this the
+  terminal's interrupt would end jpack and leave the emitter running.
 - Standard error is counted, and its first 64 KiB are kept. They are passed through only with
   `--emitter-stderr`.
 - `RunOptions.Override` sets variables after the environment is formed, for the harness's
@@ -145,6 +149,9 @@ following.
 
 1. It walks the owned paths without following a link. A link that an owns glob matches, or below
    which one can match, refuses the run (`EMIT-LINK`), as does one met at or above a response path.
+   A Windows junction, which Go reads as irregular rather than as a link, counts as a link here.
+   The root itself, its links resolved, must read as a directory and not as a junction, or the run
+   is refused before the emitter starts; a walk from a junction root would see no owned files.
    The walk passes over anything a file system reads as `.git` (below), so git's directory, or the
    `.git` file of a worktree or submodule, is never owned and never deleted as stale.
 2. The directories are created, and every file is staged as a temporary file (`.jpack-emit-*`) in

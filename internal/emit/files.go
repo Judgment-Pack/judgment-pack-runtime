@@ -36,8 +36,9 @@ type diskFile struct {
 // scanOwned lists the regular files on disk that the globs own, walking only
 // where a glob can match and never through a symbolic link. It passes over
 // anything a file system reads as ".git" (isGitName): git's directory, or the
-// file that stands for it in a worktree or submodule, is never owned. A link that a
-// glob matches, or below which one can, refuses the run (EMIT-LINK), and so
+// file that stands for it in a worktree or submodule, is never owned. A link
+// (or a Windows junction, which Go reads as irregular: linkLike) that a glob
+// matches, or below which one can, refuses the run (EMIT-LINK), and so
 // does an owned path that is neither a regular file nor a directory, or a
 // directory that cannot be listed (EMIT-PATH-UNREADABLE).
 func scanOwned(root string, owns []Glob) (map[string]diskFile, []Diagnostic) {
@@ -81,7 +82,7 @@ func scanOwned(root string, owns []Glob) (map[string]diskFile, []Diagnostic) {
 			return nil
 		}
 		switch kind := entry.Type(); {
-		case kind&fs.ModeSymlink != 0:
+		case linkLike(kind): // a symbolic link, or a junction on Windows
 			if matches(path) || below(path) {
 				at("EMIT-LINK", path)
 			}

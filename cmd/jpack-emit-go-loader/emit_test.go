@@ -1103,3 +1103,46 @@ func TestNamesAreFormedByTheRule(t *testing.T) {
 		}
 	}
 }
+
+// deepRequest is a request of one kind, deep, whose one entry's value nests
+// levels objects {"a": …} around innermost, in environment dev. The resolved
+// document nests levels + 3 containers: itself, its entries and the entry.
+func deepRequest(t *testing.T, levels int, innermost string) string {
+	t.Helper()
+	defs := make([]string, levels)
+	for i := range levels {
+		next := `{"type":"string"}`
+		if i+1 < levels {
+			next = `{"$ref":"#/$defs/l` + strconv.Itoa(i+1) + `"}`
+		}
+		defs[i] = `"l` + strconv.Itoa(i) + `":{"type":"object","properties":{"a":` + next + `},"required":["a"],"additionalProperties":false}`
+	}
+	declaration := decl("deep", `{"$ref":"#/$defs/l0","$defs":{`+strings.Join(defs, ",")+`}}`, "")
+	value := strings.Repeat(`{"a":`, levels) + innermost + strings.Repeat(`}`, levels)
+	entry := `{"kind":"deep","id":"e","owner":"platform","value":` + value + `}`
+	return requestText(`{"package":"p"}`, declaration, resolvedText("dev", pinOf(t, declaration), entry))
+}
+
+// A resolved document at the registry's bound, 32 containers deep, is read,
+// whatever its innermost value; one container more is refused, even when
+// that container is empty. The bound counts containers, not scalars.
+func TestTheResolvedDocumentsDepthBound(t *testing.T) {
+	if _, err := emit([]byte(deepRequest(t, 29, `"x"`))); err != nil {
+		t.Fatalf("32 containers, a string innermost: %v", err)
+	}
+	for _, tc := range []struct {
+		name      string
+		levels    int
+		innermost string
+	}{
+		{"33 containers, a string innermost", 30, `"x"`},
+		{"33 containers, the innermost empty", 29, `{}`},
+	} {
+		if _, err := decodeStrict([]byte(deepRequest(t, tc.levels, tc.innermost))); !errors.Is(err, errRequest) {
+			t.Errorf("%s: %v, want the request refused", tc.name, err)
+		}
+	}
+	if _, err := decodeStrict([]byte(deepRequest(t, 28, `{}`))); err != nil {
+		t.Errorf("32 containers, the innermost empty: %v", err)
+	}
+}

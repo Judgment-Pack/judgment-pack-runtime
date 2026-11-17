@@ -59,7 +59,8 @@ without a dependency outside the standard library.
 **The program.**
 - `emit(request) (response, error)` holds the logic, and `main` only wires standard input and
   output to it. The JSON is read strictly, as `cmd/jpack-emit-go-facts` reads it (ADR-0100), with a
-  depth of at most 34: a declaration or a resolved document nests 32 deep, two below the root.
+  depth of at most 34 containers, a scalar counting as no level: a declaration or a resolved
+  document nests 32 containers deep, two below the root.
 - The request must be `emitRequestVersion` `1.0.0` with exactly `emitter`, `options`,
   `declarations` and `resolved`.
 - It refuses in one of two ways. A request it does not read writes one fixed line to standard
