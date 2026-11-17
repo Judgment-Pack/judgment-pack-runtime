@@ -31,7 +31,7 @@ var (
 
 var (
 	errCopyBound = errors.New("conformance: the repository is past the copy's bounds")
-	errCopyLink  = errors.New("conformance: a symbolic link could not be made")
+	errCopyLink  = errors.New("conformance: the system does not let the user make a symbolic link")
 )
 
 // unreadableError names a path of the repository that could not be copied.
@@ -80,15 +80,80 @@ type workspace struct {
 }
 
 // newWorkspace copies the repository root into a fresh temporary directory,
-// passing over anything named ".git" in any case. A system that cannot make
-// a symbolic link the repository holds (Windows without the privilege) gets
-// the fallback.
+// passing over anything named ".git" in any case. Every link of the
+// repository is first checked to stay in it, so that one that leads out is
+// refused whether or not the copy can be made, the fallback included. Only
+// Windows refusing a link for want of the privilege gets the fallback; any
+// other link that cannot be made refuses the run, naming it.
 func newWorkspace(source string) (*workspace, *emit.Diagnostic) {
+	if diagnostic := copyFailure(checkLinks(source)); diagnostic != nil {
+		return nil, diagnostic
+	}
 	w := &workspace{source: source}
 	if diagnostic := w.fresh(); diagnostic != nil {
 		return nil, diagnostic
 	}
 	return w, nil
+}
+
+// checkLinks walks source as copyTree does, under its entry bound, and
+// refuses the first symbolic link that leads out of it (linkOutError).
+func checkLinks(source string) error {
+	entries := 0
+	return filepath.WalkDir(source, func(full string, entry fs.DirEntry, err error) error {
+		relative, relErr := filepath.Rel(source, full)
+		if relErr != nil {
+			return relErr
+		}
+		name := filepath.ToSlash(relative)
+		if err != nil {
+			return unreadableError{path: name}
+		}
+		if name == "." {
+			return nil
+		}
+		if isGitName(entry.Name()) {
+			if entry.IsDir() {
+				return fs.SkipDir
+			}
+			return nil
+		}
+		if entries++; entries > maxCopyEntries {
+			return errCopyBound
+		}
+		if entry.Type()&fs.ModeSymlink == 0 {
+			return nil
+		}
+		link, err := os.Readlink(full)
+		if err != nil {
+			return unreadableError{path: name}
+		}
+		if leadsOut(source, name, link) {
+			return linkOutError{path: name}
+		}
+		return nil
+	})
+}
+
+// copyFailure is the diagnostic that refuses the run for an error of
+// checkLinks or copyTree, nil for none and for errCopyLink, the fallback.
+func copyFailure(err error) *emit.Diagnostic {
+	var unreadable unreadableError
+	var linkOut linkOutError
+	var d emit.Diagnostic
+	switch {
+	case err == nil, errors.Is(err, errCopyLink):
+		return nil
+	case errors.As(err, &linkOut):
+		d = emit.NewDiagnostic("EMIT-HARNESS-BOUND", emit.Location{Document: emit.DocumentRepository, Path: linkOut.path})
+	case errors.Is(err, errCopyBound):
+		d = emit.NewDiagnostic("EMIT-HARNESS-BOUND", emit.Location{Document: emit.DocumentRepository})
+	case errors.As(err, &unreadable):
+		d = emit.NewDiagnostic("EMIT-PATH-UNREADABLE", emit.Location{Document: emit.DocumentRepository, Path: unreadable.path})
+	default:
+		d = emit.NewDiagnostic("EMIT-PATH-UNREADABLE", emit.Location{Document: emit.DocumentRepository})
+	}
+	return &d
 }
 
 func (w *workspace) fresh() *emit.Diagnostic {
@@ -104,29 +169,14 @@ func (w *workspace) fresh() *emit.Diagnostic {
 		return &d
 	}
 	before, err := copyTree(w.source, root)
-	var unreadable unreadableError
-	var linkOut linkOutError
-	switch {
-	case errors.As(err, &linkOut):
+	if err != nil {
 		removeTree(dir)
-		d := emit.NewDiagnostic("EMIT-HARNESS-BOUND", emit.Location{Document: emit.DocumentRepository, Path: linkOut.path})
-		return &d
-	case errors.Is(err, errCopyLink):
-		removeTree(dir)
+		if diagnostic := copyFailure(err); diagnostic != nil {
+			return diagnostic
+		}
+		// errCopyLink: every link was checked by newWorkspace to stay in.
 		w.dir, w.root, w.fallback, w.before = "", w.source, true, nil
 		return nil
-	case errors.Is(err, errCopyBound):
-		removeTree(dir)
-		d := emit.NewDiagnostic("EMIT-HARNESS-BOUND", emit.Location{Document: emit.DocumentRepository})
-		return &d
-	case errors.As(err, &unreadable):
-		removeTree(dir)
-		d := emit.NewDiagnostic("EMIT-PATH-UNREADABLE", emit.Location{Document: emit.DocumentRepository, Path: unreadable.path})
-		return &d
-	case err != nil:
-		removeTree(dir)
-		d := emit.NewDiagnostic("EMIT-PATH-UNREADABLE", emit.Location{Document: emit.DocumentRepository})
-		return &d
 	}
 	w.dir, w.root, w.before = dir, root, before
 	return nil
@@ -165,7 +215,10 @@ func isGitName(name string) bool { return strings.EqualFold(name, ".git") }
 // target itself. A link keeps its target, except that an absolute target
 // below source is moved to the same path below target, so that a write
 // through it stays in the copy; a link that leads out of source is
-// refused (linkOutError). It returns what it copied, by slash path.
+// refused (linkOutError). A link it cannot make is unreadableError naming
+// it, except for the one failure of the fallback, a system that does not
+// let the user make links (errCopyLink). It returns what it copied, by slash
+// path.
 func copyTree(source, target string) (map[string]entryState, error) {
 	states := map[string]entryState{}
 	var total int64
@@ -213,7 +266,10 @@ func copyTree(source, target string) (map[string]entryState, error) {
 				}
 			}
 			if err := os.Symlink(link, destination); err != nil {
-				return errCopyLink
+				if linkUnprivileged(err) {
+					return errCopyLink
+				}
+				return unreadableError{path: name}
 			}
 			states[name] = entryState{kind: kindLink, target: link}
 		case kind.IsDir():

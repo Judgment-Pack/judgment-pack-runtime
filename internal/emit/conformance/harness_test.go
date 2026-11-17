@@ -388,6 +388,62 @@ func TestALinkOutOfTheRepositoryIsRefused(t *testing.T) {
 	}
 }
 
+// A link that cannot be made in the copy, other than for want of Windows'
+// privilege, refuses the run naming it, and the emitter never runs: in a
+// fallback it would run in the repository itself and write its marker
+// there. Here the
+// link's absolute target is in the repository, and moved into a copy whose
+// path is longer, past the system's limit on a link's target. A link that
+// leads out is refused even when it comes after that one in walk order.
+func TestALinkThatCannotBeMadeIsRefused(t *testing.T) {
+	limit := 4096
+	if runtime.GOOS == "darwin" {
+		limit = 1024
+	}
+	cases := map[string]struct {
+		out  bool
+		code string
+		path string
+	}{
+		"alone":                        {false, "EMIT-PATH-UNREADABLE", "a-long"},
+		"before a link that leads out": {true, "EMIT-HARNESS-BOUND", "z-out"},
+	}
+	for name, c := range cases {
+		t.Run(name, func(t *testing.T) {
+			f := newFixture(t)
+			outside := t.TempDir()
+			// The copy is made below TMPDIR: a long one makes its path longer
+			// than the repository's.
+			long := filepath.Join(t.TempDir(), strings.Repeat("d", 200), strings.Repeat("e", 200), strings.Repeat("f", 200))
+			if err := os.MkdirAll(long, 0o755); err != nil {
+				t.Fatal(err)
+			}
+			t.Setenv("TMPDIR", long)
+			target := f.root
+			for len(target) < limit-96 {
+				target += string(filepath.Separator) + strings.Repeat("p", min(200, limit-96-len(target)-1))
+			}
+			links := map[string]string{"a-long": target}
+			if c.out {
+				links["z-out"] = outside
+			}
+			symlinks(t, f.root, links)
+			m := f.manifest([]string{"stray", "create", "ran.txt"}, map[string]any{"environments": "all"})
+			f.registryVector("a", nil)
+			report := f.run(m, true)
+			if report.Outcome != OutcomeNotRun || report.Exit() != ExitNotRun || len(report.Rows) != 0 || len(report.Diagnostics) != 1 {
+				t.Fatalf("report: %s", dump(report))
+			}
+			if d := report.Diagnostics[0]; d.Code != c.code || d.Location.Document != emit.DocumentRepository || d.Location.Path != c.path {
+				t.Fatalf("diagnostic: %+v", d)
+			}
+			if _, err := os.Lstat(filepath.Join(f.root, "ran.txt")); !os.IsNotExist(err) {
+				t.Fatalf("the emitter ran: %v", err)
+			}
+		})
+	}
+}
+
 // Links that stay in the repository are copied: a relative target as
 // written, an absolute one moved into the copy, a dangling one too.
 func TestCopyKeepsLinksThatStayIn(t *testing.T) {

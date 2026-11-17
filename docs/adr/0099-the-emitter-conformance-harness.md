@@ -212,9 +212,12 @@ because skipping would still run the emitter with a way out of the copy: a write
 would land in the real directory, possibly the repository itself, while the run passed. The
 author removes the link from the working tree, or makes it relative and inside `--root`. The copy is bounded at 256 MiB of file bytes
 and 100 000 entries (`MaxCopyBytes`, `MaxCopyEntries`). Past either, the result is
-`EMIT-HARNESS-BOUND` and exit 2. A system that cannot make a link the repository holds (Windows
-without the privilege) runs the emitter in the repository itself, and each check 6 row skips, with
-that reason. The copy keeps an honest emitter's mistake out of the repository. It is not a
+`EMIT-HARNESS-BOUND` and exit 2. Every link of `--root` is checked to stay in it before the copy is
+made, so a link that leads out is refused whether or not the copy can be made. Only Windows refusing
+a link for want of the privilege (`ERROR_PRIVILEGE_NOT_HELD`) runs the emitter in the repository
+itself, and each check 6 row skips, with that reason. Any other link the copy cannot make, a target
+past the system's length limit once moved into the copy for one, is `EMIT-PATH-UNREADABLE` naming
+the link, and exit 2, before any emitter runs. The copy keeps an honest emitter's mistake out of the repository. It is not a
 sandbox: the emitter runs with the user's rights.
 
 **Hostile responses.** Each is passed to `emit.ParseResponse` for a fixed manifest of the
