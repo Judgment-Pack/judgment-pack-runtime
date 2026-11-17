@@ -1,0 +1,42 @@
+{
+  "emitterManifestVersion": "1.0.0",
+  "id": "https://github.com/Judgment-Pack/judgment-pack-runtime/cmd/jpack-emit-go-loader",
+  "version": "0.1.0",
+  "owner": "Judgment-Pack/judgment-pack-runtime",
+  "description": "The reference Go typed loader emitter (spec RFC 0036 section 6, item 1): for each kind read, a Go type generated from its schema, with each secret position a startup.Secret, and a loader that reads a resolved document through the start-up module and decodes each entry of the kind into its type. An adopting repository lists its own kinds in reads, and sets command, owns and the directory option to its own layout.",
+  "reads": [
+    { "kind": "db-role", "id": "https://example.invalid/kinds/db-role", "versions": "^1.0.0" }
+  ],
+  "input": "resolved",
+  "environments": "all",
+  "requestVersions": ["1.0.0"],
+  "options": {
+    "type": "object",
+    "additionalProperties": false,
+    "required": ["package"],
+    "properties": {
+      "package": {
+        "description": "The Go package name of the generated files.",
+        "type": "string",
+        "maxLength": 64,
+        "pattern": "^[a-z][a-z0-9]*$",
+        "not": {
+          "enum": ["break", "case", "chan", "const", "continue", "default", "defer", "documentation", "else", "fallthrough",
+                   "for", "func", "go", "goto", "if", "import", "interface", "main", "map", "package", "range",
+                   "return", "select", "struct", "switch", "type", "var"]
+        }
+      },
+      "directory": {
+        "description": "The directory the files are written to, a literal relative path that the Go toolchain compiles: no segment begins with . or _, or is testdata or vendor in any case. It must lie under the owns glob.",
+        "type": "string",
+        "maxLength": 256,
+        "pattern": "^[A-Za-z0-9]([A-Za-z0-9_.\\-]*[A-Za-z0-9_])?(/[A-Za-z0-9]([A-Za-z0-9_.\\-]*[A-Za-z0-9_])?)*$",
+        "not": { "pattern": "^(.*/)?([Tt][Ee][Ss][Tt][Dd][Aa][Tt][Aa]|[Vv][Ee][Nn][Dd][Oo][Rr])(/.*)?$" },
+        "default": "generated/loader"
+      }
+    }
+  },
+  "command": ["go", "run", "./cmd/jpack-emit-go-loader"],
+  "env": ["GOCACHE", "GOMODCACHE", "GOPATH"],
+  "owns": ["generated/loader/*.go"]
+}

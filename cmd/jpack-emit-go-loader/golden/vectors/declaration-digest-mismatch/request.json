@@ -1,0 +1,95 @@
+{
+  "emitRequestVersion": "1.0.0",
+  "emitter": {
+    "id": "https://github.com/Judgment-Pack/judgment-pack-runtime/cmd/jpack-emit-go-loader",
+    "version": "0.1.0"
+  },
+  "options": {
+    "package": "dbroleloader"
+  },
+  "declarations": [
+    {
+      "kindFormatVersion": "1.0.0",
+      "id": "https://example.invalid/kinds/db-role",
+      "version": "1.2.0",
+      "kind": "db-role",
+      "owner": "platform-data",
+      "schema": {
+        "type": "object",
+        "required": [
+          "database",
+          "privileges"
+        ],
+        "additionalProperties": false,
+        "properties": {
+          "database": {
+            "type": "string",
+            "maxLength": 63
+          },
+          "privileges": {
+            "type": "array",
+            "items": {
+              "enum": [
+                "read",
+                "write",
+                "admin"
+              ]
+            },
+            "uniqueItems": true
+          },
+          "password": {
+            "type": "string"
+          },
+          "connectionLimit": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 501
+          }
+        }
+      },
+      "secrets": [
+        "/password"
+      ],
+      "description": "A database role a service connects as.",
+      "entryId": {
+        "pattern": "^[a-z][a-z0-9-]{0,62}$"
+      },
+      "references": [
+        {
+          "pointer": "/database",
+          "kinds": [
+            "database"
+          ]
+        }
+      ],
+      "overlayable": [
+        "/connectionLimit",
+        "/password"
+      ],
+      "bounds": {
+        "maxEntries": 1000,
+        "maxEntryBytes": 16384
+      }
+    }
+  ],
+  "resolved": [
+    {
+      "resolvedFormatVersion": "1.0.0",
+      "registry": {
+        "id": "https://example.invalid/registries/platform",
+        "version": "4.0.0",
+        "digest": "sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+      },
+      "environment": "dev",
+      "kinds": [
+        {
+          "kind": "db-role",
+          "id": "https://example.invalid/kinds/db-role",
+          "version": "1.2.0",
+          "digest": "sha256:d5aa46404ca9baad7d227ac48f05b96a419566dee89b6547d1b0a0f2fff08bb5"
+        }
+      ],
+      "entries": []
+    }
+  ]
+}
