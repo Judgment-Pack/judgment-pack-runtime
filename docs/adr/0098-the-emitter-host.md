@@ -359,6 +359,13 @@ leaves exit code 1, which an emitter may also give by itself, so an interrupt th
 time may report `EMIT-INTERRUPTED` for an emitter that was already failing with exit code 1, where
 `EMIT-PROCESS` would be its code without the interrupt.
 Of several environments' runs, none starts after the interrupt, and the refusal is reported once.
+With `--check`, an interrupt that comes before the comparison has ended refuses the run the same
+way, and no comparison is reported (amended 2026-11-17, #475). Before, an interrupt that came once
+the last emitter had ended was not read, and the check exited 0 or 1. An interrupt that comes once
+the write has begun does not change the outcome: the write finishes, and the report says `written`
+with exit 0, since the whole response is then on disk. `jpack emit conformance --update`, which
+writes once per vector, refuses the run after such a replacement instead, so that no later vector
+runs (ADR-0099).
 An emitter that leaves its process group (`setsid`) before the kill makes the group kill fail
 (`ESRCH`); the kill then does not count as sent, and the run is `EMIT-PROCESS`, not
 `EMIT-INTERRUPTED`, still a failure, as before.

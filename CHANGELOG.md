@@ -14,6 +14,12 @@ All notable changes to tagged releases are documented here.
   with `EMIT-HARNESS-BOUND`, as before v0.50.0. Git writes both only when `index.threads` is set
   to other than 1, or `index.recordOffsetTable` or `index.recordEndOfIndexEntries` is on. The
   conformance claim in CONFORMANCE.md is unchanged.
+- **`jpack emit --check` reports an interrupt that comes after the last emitter** (ADR-0098). An
+  interrupt or SIGTERM that came once the last environment's emitter had ended, during the scan of
+  the owned paths or the comparison, was not read: the check exited 0 or 1 as if it had not come.
+  It now refuses the run with `EMIT-INTERRUPTED` at `/command`, as `jpack emit` does before its
+  write. ADR-0098 now also states that an interrupt once the write has begun leaves the outcome
+  `written`, exit 0. The conformance claim in CONFORMANCE.md is unchanged.
 
 ## 0.50.0 - 2026-11-17
 
