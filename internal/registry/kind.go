@@ -1,11 +1,12 @@
 package registry
 
 import (
-	"net/url"
 	"regexp"
 	"sort"
 	"strconv"
 	"strings"
+
+	"github.com/Judgment-Pack/judgment-pack-runtime/internal/uriformat"
 )
 
 var (
@@ -63,6 +64,11 @@ var kindRequired = []string{"id", "version", "kind", "owner", "schema"}
 // readKind runs step 2 on one admitted kind declaration.
 func readKind(root map[string]any, location Location, diagnostics *collector) *Kind {
 	before := diagnostics.errors()
+	// Every step-2 diagnostic of a declaration whose kind member is a kind
+	// name carries it (§7.3), so it is read before any other member.
+	if name, ok := root["kind"].(string); ok && location.Kind == "" && kindNamePattern.MatchString(name) {
+		location.Kind = name
+	}
 	fail := func(code string, path ...string) {
 		at := location
 		at.Pointer = pointerOf(path)
@@ -97,9 +103,6 @@ func readKind(root map[string]any, location Location, diagnostics *collector) *K
 	kind.Name = stringMember("kind", kindNamePattern.MatchString)
 	kind.Owner = stringMember("owner", ownerPattern.MatchString)
 	stringMember("description", func(string) bool { return true })
-	if location.Kind == "" && kind.Name != "" {
-		location.Kind = kind.Name
-	}
 	if value, ok := root["deprecated"]; ok {
 		deprecated, isBool := value.(bool)
 		if !isBool {
@@ -267,12 +270,14 @@ func readReferencePatterns(root map[string]any, schema *schemaNode, fail func(st
 	return out
 }
 
+// isAbsoluteURI reports whether text is an RFC 3986 absolute-URI of at most
+// 2048 characters (registry companion §3.1): scheme ":" hier-part
+// [ "?" query ], so no fragment, in ASCII, with no white space. The grammar
+// is the runtime's one RFC 3986 reader (ADR-0064). It is the form of a
+// kind's and a registry's id, of a pin's id, and of a facts contract's id
+// and source kind id.
 func isAbsoluteURI(text string) bool {
-	if text == "" || len(text) > 2048 || strings.ContainsAny(text, " \t\r\n") {
-		return false
-	}
-	parsed, err := url.Parse(text)
-	return err == nil && parsed.IsAbs() && parsed.Fragment == ""
+	return text != "" && len(text) <= 2048 && !strings.Contains(text, "#") && uriformat.Valid(text)
 }
 
 func sortedKeys[V any](object map[string]V) []string {

@@ -2,6 +2,31 @@
 
 All notable changes to tagged releases are documented here.
 
+## Unreleased
+
+- **Registry diagnostics follow the registry companion's text** (registry companion §3.1, §3.3,
+  §3.4, §6.2 and §7.3).
+  - Every step-2 diagnostic of a kind declaration whose `kind` member is a kind name now carries
+    `kind` in its location (§7.3). Before, an unknown or missing member, and a bad `id` or
+    `version`, were reported without it.
+  - A schema's cycle check covers every `$ref` that names a definition, whatever else the schema
+    fails (§3.3). Before, a `$ref` that named no definition, or any other schema error, hid a
+    cycle among the definitions.
+  - An entry reference's `#pointer` is held to 512 code points as written (§6.2), not 512 bytes,
+    so a pointer of 300 two-byte code points is read. A pointer pattern (§3.5) is still at most
+    512 bytes.
+  - An `id` is read as an RFC 3986 `absolute-URI` (§3.1), by the runtime's one RFC 3986 reader
+    (ADR-0064), not by `net/url`: in ASCII, with a `%` followed by two hex digits, and `[` and `]`
+    only around an IP-literal host. `url.Parse` admitted non-ASCII and characters outside RFC 3986
+    such as `<`, `>`, `\`, `"`, `{`, `^`, `` ` `` and `|`. The rule holds a kind's and a registry's
+    `id`, a pin's `id`, and a facts contract's `id` and `source.kind.id`, as before.
+  - A pattern's size is counted on the pattern as written (§3.4, "Program size"; ADR-0093
+    amendment), not on RE2's parse, so every reader refuses the same patterns. `(ab|ac){1000}` is
+    5000 and is now `REG-KIND-PATTERN-LIMIT`; RE2's parse factored it to `a[bc]`, 2000, and
+    admitted it. The kind's total of 65,536 counts the same sizes, a pattern outside the subset
+    is still `REG-KIND-PATTERN` alone, and the code's message now says size, not instructions.
+  - The conformance claim in CONFORMANCE.md is unchanged.
+
 ## 0.47.0 - 2026-11-16
 
 - **A reader for Terraform plan and state JSON** (ADR-0097, proposed). Package
