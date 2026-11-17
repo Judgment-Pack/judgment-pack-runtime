@@ -1,0 +1,38 @@
+{
+  "emitRequestVersion": "1.0.0",
+  "emitter": { "id": "https://github.com/Judgment-Pack/judgment-pack-runtime/cmd/jpack-emit-go-facts", "version": "0.1.0" },
+  "options": { "package": "dbrolefacts" },
+  "factsContracts": [
+    {
+      "factsContractVersion": "1.0.0",
+      "id": "https://example.invalid/kinds/db-role",
+      "version": "1.2.0",
+      "source": { "kind": { "id": "https://example.invalid/kinds/db-role", "version": "1.2.0", "digest": "sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef" } },
+      "facts": [
+        { "pointer": "/entry", "type": "object", "present": "always" },
+        { "pointer": "/entry/id", "type": "string", "present": "always" },
+        { "pointer": "/entry/kind", "type": "string", "present": "always", "values": ["db-role"] },
+        { "pointer": "/entry/owner", "type": "string", "present": "always" },
+        { "pointer": "/environment", "type": "string", "present": "always", "values": ["dev", "staging", "prod"] },
+        { "pointer": "/references", "type": "object", "present": "always" },
+        { "pointer": "/references/~1database", "type": "object", "present": "always" },
+        { "pointer": "/references/~1database/id", "type": "string", "present": "always" },
+        { "pointer": "/references/~1database/kind", "type": "string", "present": "always", "values": ["database"] },
+        { "pointer": "/references/~1database/value", "type": "object", "present": "always" },
+        { "pointer": "/references/~1database/value/engine", "type": "string", "present": "always" },
+        { "pointer": "/registry", "type": "object", "present": "always" },
+        { "pointer": "/registry/digest", "type": "string", "present": "always" },
+        { "pointer": "/registry/id", "type": "string", "present": "always" },
+        { "pointer": "/registry/version", "type": "string", "present": "always" },
+        { "pointer": "/value", "type": "object", "present": "always" },
+        { "pointer": "/value/connectionLimit", "type": "decimal", "present": "optional" },
+        { "pointer": "/value/database", "type": "string", "present": "always" },
+        { "pointer": "/value/password", "type": "object", "present": "optional", "secretReference": true },
+        { "pointer": "/value/password/scope", "type": "string", "present": "always" },
+        { "pointer": "/value/password/store", "type": "string", "present": "always", "values": ["gcp-sm"] },
+        { "pointer": "/value/privileges", "type": "array", "present": "always", "items": "string", "values": ["read", "write", "admin"] },
+        { "pointer": "/value/privileges/*", "type": "string", "present": "optional", "values": ["read", "write", "admin"] }
+      ]
+    }
+  ]
+}
