@@ -107,7 +107,10 @@ unknown level is `EMIT-VECTOR` and exit 2.
 
 **`--update`** rewrites `expected/` of each vector whose run succeeded, from that run. It never
 touches an expected-failure vector. It writes nowhere but `VECTOR/expected/`, which must be a
-directory or absent, and it removes that directory first. A run that gives no files gets the
+directory or absent. The new `expected/` is written whole in a temporary directory in the
+vector, `.expected-update-*`, and renamed into place, and the old one is then removed, so a write
+that fails partway leaves `expected/` as it was. A run stopped between the renames can leave that
+directory, which the layout refuses as an unknown member until it is removed. A run that gives no files gets the
 marker `expected/~empty` alone, and a run that gives files has no marker. The vector directories
 are not links.
 The checks then run against the new `expected/`.

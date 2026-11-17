@@ -165,6 +165,9 @@ All notable changes to tagged releases are documented here.
   - When the repository copy cannot be made again after a vector's stray writes, `jpack emit
     conformance` keeps that vector's failing check 6 row in the report. The run still stops, not
     run, with exit 2; before, the row was dropped.
+  - `jpack emit conformance --update` writes a vector's new `expected/` whole in a temporary
+    directory beside it and renames it into place, so a write that fails partway leaves
+    `expected/` as it was. Before, it removed `expected/` first and could leave it partial.
   - The conformance claim in CONFORMANCE.md is unchanged.
 
 ## 0.47.0 - 2026-11-16

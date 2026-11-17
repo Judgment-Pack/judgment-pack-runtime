@@ -521,22 +521,56 @@ func compareExpected(files []emit.File, expected map[string]expectedFile) []emit
 // the marker ~empty alone for a run that gave none. It writes only below the
 // vector's expected/, which must be a directory and not a link, or absent,
 // in a vector directory that is still a directory and not a link; each path
-// is one the host's path rules admitted.
+// is one the host's path rules admitted. The new expected/ is written whole
+// in a temporary directory beside it and renamed into place, so a write that
+// fails partway leaves expected/ as it was.
 func writeExpected(dir string, files []emit.File) error {
 	if err := plainDirectory(dir); err != nil {
 		return err
 	}
 	target := filepath.Join(dir, dirExpected)
+	existed := false
 	if info, err := os.Lstat(target); err == nil {
 		if !info.IsDir() {
 			return errors.New("conformance: expected/ is not a directory")
 		}
-		if err := os.RemoveAll(target); err != nil {
-			return err
-		}
+		existed = true
 	} else if !errors.Is(err, fs.ErrNotExist) {
 		return err
 	}
+	// The temporary directory holds the new expected/ until it is renamed
+	// into place, and then the old one; it is removed with what it holds.
+	work, err := os.MkdirTemp(dir, expectedUpdatePrefix)
+	if err != nil {
+		return err
+	}
+	defer removeTree(work)
+	fresh, old := filepath.Join(work, "new"), filepath.Join(work, "old")
+	if err := fillExpected(fresh, files); err != nil {
+		return err
+	}
+	if existed {
+		if err := os.Rename(target, old); err != nil {
+			return err
+		}
+	}
+	if err := os.Rename(fresh, target); err != nil {
+		if existed {
+			err = errors.Join(err, os.Rename(old, target))
+		}
+		return err
+	}
+	return nil
+}
+
+// expectedUpdatePrefix names the temporary directory --update writes a new
+// expected/ in, beside it. One left by a run that was stopped is not of the
+// layout, so the vector is refused until it is removed.
+const expectedUpdatePrefix = ".expected-update-"
+
+// fillExpected writes a run's files, or the marker alone, to a new
+// directory target.
+func fillExpected(target string, files []emit.File) error {
 	if err := os.Mkdir(target, 0o755); err != nil {
 		return err
 	}
