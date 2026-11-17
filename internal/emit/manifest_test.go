@@ -38,6 +38,13 @@ func TestManifestRefusesEachMalformedMember(t *testing.T) {
 		{"owns partial double star", map[string]any{"owns": []any{"gen/a**"}}, "/owns/0"},
 		{"owns backslash", map[string]any{"owns": []any{`gen\**`}}, "/owns/0"},
 		{"owns everything", map[string]any{"owns": []any{"gen/**", "**"}}, "/owns/1"},
+		// Each of these owns every path, or every top-level file, as "**"
+		// does: no owns glob may begin with a segment that holds a "*".
+		{"owns everything below any file", map[string]any{"owns": []any{"gen/**", "**/*"}}, "/owns/1"},
+		{"owns everything twice", map[string]any{"owns": []any{"gen/**", "**/**"}}, "/owns/1"},
+		{"owns everything below any directory", map[string]any{"owns": []any{"gen/**", "*/**"}}, "/owns/1"},
+		{"owns every top-level file", map[string]any{"owns": []any{"gen/**", "*"}}, "/owns/1"},
+		{"owns a wildcard top-level name", map[string]any{"owns": []any{"gen/**", "g*/a"}}, "/owns/1"},
 		{"owns git's directory", map[string]any{"owns": []any{".git/**"}}, "/owns/0"},
 		{"owns git's directory in another case", map[string]any{"owns": []any{"sub/.GIT/*"}}, "/owns/0"},
 		{"environments with facts contracts", map[string]any{"input": "factsContracts"}, "/environments"},
@@ -74,6 +81,12 @@ func TestManifestAcceptsItsOptionalMembers(t *testing.T) {
 	}))
 	if !m.Deprecated || m.Input != InputResolved || !slices.Equal(m.Env, []string{"EMIT_TOKEN_NAME"}) || m.Command[0] != "./bin/emitter" {
 		t.Fatalf("manifest: %+v", m)
+	}
+	// An owns glob whose first segment is a literal is admitted.
+	owns := []any{"gen/**", "db/*.sql", "a/**/b", "README.md"}
+	m = mustManifest(t, manifestDoc([]string{"exit", "0"}, map[string]any{"owns": owns}))
+	if len(m.Owns) != len(owns) || m.Owns[0].String() != "gen/**" {
+		t.Fatalf("owns: %v", m.Owns)
 	}
 	facts := mustManifest(t, manifestDoc([]string{"exit", "0"}, map[string]any{"input": "factsContracts", "environments": nil}))
 	if facts.Input != InputFactsContracts || facts.Environments != "" {

@@ -55,8 +55,9 @@ checks every member at its pointer (`EMIT-MANIFEST`):
 - `options` is compiled with the registry's schema subset.
 - `env` names follow the grammar, are not reserved and are not repeated.
 - `command` and `owns` are relative, with no `..` segment.
-- An owns glob uses `*` within one segment and `**` as a whole segment. A bare `**` is refused, and
-  so is a glob with a `.git` segment in any case (see below).
+- An owns glob uses `*` within one segment and `**` as a whole segment. Its first segment is a
+  literal, with no `*`, so `**`, `**/*`, `*/**` and `*` are refused. So is a glob with a `.git`
+  segment in any case (see below).
 
 `--other-manifest` names the repository's other manifests. Their owns globs must not overlap this
 one's (`EMIT-OWNS-OVERLAP`). Overlap is decided exactly: two globs overlap when one path can match
@@ -204,11 +205,15 @@ leave host refusals uncoded until "the first host's rows". This runtime adds the
   any segment (a drive or an NTFS stream), a segment ending in `.` or a space, and a reserved device
   name (`CON`, `PRN`, `AUX`, `NUL`, `COM1`–`COM9`, `LPT1`–`LPT9`) in any case, with or without an
   extension. The same rules hold for owns globs.
-- Git's directory is never owned. A bare `**` owns the whole repository, so stale deletion would
-  remove every file the emitter does not answer with; a manifest that gives it is refused. An owns
-  glob or response path with a `.git` segment is refused, in any case, since a case-insensitive file
-  system reads `.GIT` as `.git`. A glob such as `*/**` can still match a path below `.git`, so the
-  walk of the owned paths never enters it either. Decided here; the RFC is silent.
+- An owns glob's first segment is a literal name, with no `*`. A glob such as `**`, `**/*`,
+  `**/**`, `*/**` or `*` owns files across the whole repository, so stale deletion would remove
+  every one the emitter does not answer with; a manifest that gives one is refused. Testing the
+  first segment, not the glob's text, refuses every spelling of "everything" at once. Decided here;
+  the RFC is silent.
+- Git's directory is never owned. An owns glob or response path with a `.git` segment is refused,
+  in any case, since a case-insensitive file system reads `.GIT` as `.git`. A glob such as
+  `gen/**` can still match a path below a nested `.git`, so the walk of the owned paths never
+  enters it either. Decided here; the RFC is silent.
 - No argument of `command` may be absolute or hold a `..` segment.
 - Emitter codes follow `^x-[a-z0-9]+(-[a-z0-9]+)*$`, at most 64 bytes.
 - An unreadable input exits 2, where the registry commands exit 4, because RFC 0036 §4 fixes the
@@ -239,5 +244,5 @@ leave host refusals uncoded until "the first host's rows". This runtime adds the
   2. Is `diagnostics` optional?
   3. How strict should the normalization rule be?
   4. What do modes mean on Windows?
-- Decided here, for the companion to confirm: owns globs that name `.git`, and a bare `**`, are
-  refused, and the walk never enters `.git` (see the readings above).
+- Decided here, for the companion to confirm: owns globs that name `.git`, and globs whose first
+  segment holds a `*`, are refused, and the walk never enters `.git` (see the readings above).

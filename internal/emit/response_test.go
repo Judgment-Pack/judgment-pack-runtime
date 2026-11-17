@@ -9,10 +9,11 @@ import (
 	"testing"
 )
 
-// anyOwner owns every path, so that only the path rules decide.
+// anyOwner owns every path below gen. No manifest owns every path (an owns
+// glob begins with a literal segment), so a path outside gen is also held to
+// the path rules directly.
 func anyOwner(t *testing.T) *Manifest {
-	// A bare "**" is refused; "*/**" owns every path of one or more segments.
-	return mustManifest(t, manifestDoc([]string{"exit", "0"}, map[string]any{"owns": []any{"*/**"}}))
+	return mustManifest(t, manifestDoc([]string{"exit", "0"}, map[string]any{"owns": []any{"gen/**"}}))
 }
 
 func TestResponseRefusesEachUnsafePath(t *testing.T) {
@@ -51,6 +52,9 @@ func TestResponseRefusesEachUnsafePath(t *testing.T) {
 			if got := codes(findings); !slices.Equal(got, []string{"EMIT-RESPONSE@/files/0/path"}) {
 				t.Fatalf("%q: %v", path, got)
 			}
+			if checkPathForm(path) == nil {
+				t.Fatalf("%q is within the path rules", path)
+			}
 		})
 	}
 	for _, path := range []string{"gen/console", "gen/com10", "gen/com0", "gen/a.con", "gen/.nul", "gen/a.b", "gen/a b"} {
@@ -58,7 +62,7 @@ func TestResponseRefusesEachUnsafePath(t *testing.T) {
 			t.Errorf("%q: %v", path, codes(findings))
 		}
 	}
-	atLimit := strings.Repeat("a/", 255) + "bc"
+	atLimit := "gen/" + strings.Repeat("a/", 253) + "bc"
 	if len(atLimit) != MaxPathBytes {
 		t.Fatalf("the path at the limit has %d bytes", len(atLimit))
 	}
