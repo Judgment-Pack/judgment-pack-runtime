@@ -4,6 +4,11 @@ All notable changes to tagged releases are documented here.
 
 ## Unreleased
 
+- **`TF-VALUE-LIMIT`'s message names both bounds.** It named only the 268435456-byte cap, even
+  when the bound that applied was sixteen times the file; it now names the lesser of the two, and
+  that a plan resource's `afterUnknown` pointers are held to it as they are collected. The message
+  is still fixed text, with no value from the file. The conformance claim in CONFORMANCE.md is
+  unchanged.
 - **A deposed Terraform object is identified by its key** (dialect §4.5 step 4, ADR-0097
   reading 4). An object an apply replaced but has not yet destroyed shares its resource's
   address; the reader now reads its deposed key, `deposed` in a plan and `deposed_key` in a

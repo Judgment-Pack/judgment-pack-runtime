@@ -100,7 +100,7 @@ var messages = map[string]string{
 	CodeSensitivity: "A resource of the read section, selected or not, does not carry its sensitivity mirror, or carries one that is not true, false, an object or an array at every position.",
 	CodeSelectBound: "The source selects more resources than its select.max.",
 	CodeNumber:      "A number in the acquired value has a normal form longer than 64 characters.",
-	CodeValueLimit:  "The acquired value's canonical JSON is longer than this runtime's bound of 268435456 bytes.",
+	CodeValueLimit:  "The acquired value is over this runtime's bound, the lesser of 268435456 bytes and sixteen times the file: its canonical JSON is longer, or a selected plan resource's afterUnknown pointers, each charged eight bytes more, pass what remains of the bound.",
 }
 
 // streamSizeMessage is TF-SIZE's fixed message for a stream: ReadStream stops
