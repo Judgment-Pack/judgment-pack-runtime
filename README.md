@@ -128,6 +128,7 @@ jpack registry resolve <registry-or-> --kind <file>... --environment <env>   (on
 jpack registry facts --registry <file-or-> --kinds <file-or-dir>... --kind <name> --environment <env>|--all-environments [--contract <file>]   (a kind's entries as a facts batch for evaluate's outcome gate, spec RFC 0037; ADR-0095)
 jpack registry check-pack <pack-or-> --contract <file-or->   (the facts a pack reads, checked against a facts contract; nothing is evaluated; ADR-0095)
 jpack registry import <yaml-or-> [--output <file>]   (the YAML authoring subset of RFC 0034 §7 to canonical JSON; refusals by line and column; ADR-0094)
+jpack emit --manifest <file> (--registry <file-or-> --kinds <file-or-dir>... | --facts-contract <file>...) [--options <file>] [--check] [--timeout 120s]   (run a registry emitter and write or check the files it owns, spec RFC 0036; ADR-0098)
 jpack terraform facts (--plan <file-or-> | --state <file-or->) --type <type>[,<type>...] [--mode managed|data] [--address <pattern>] [--actions a,b] [--max N] [--max-bytes N]   (terraform show -json output as a facts batch, sensitive values removed first, spec RFC 0038 §6; ADR-0097)
 jpack mcp
 jpack experimental evaluate <pack-or->   (EXPERIMENTAL SURFACE; claim: CONFORMANCE.md)
