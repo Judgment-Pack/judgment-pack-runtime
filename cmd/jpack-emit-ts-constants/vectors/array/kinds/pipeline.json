@@ -1,0 +1,72 @@
+{
+  "kindFormatVersion": "1.0.0",
+  "id": "https://example.org/kinds/pipeline",
+  "version": "1.0.0",
+  "kind": "pipeline",
+  "owner": "platform",
+  "schema": {
+    "type": "object",
+    "additionalProperties": false,
+    "required": [
+      "stages"
+    ],
+    "properties": {
+      "stages": {
+        "type": "array",
+        "items": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "name"
+          ],
+          "properties": {
+            "name": {
+              "type": "string"
+            },
+            "retries": {
+              "type": "integer"
+            },
+            "stageToken": {
+              "type": "string"
+            }
+          }
+        }
+      },
+      "tags": {
+        "type": "array",
+        "items": {
+          "type": "string"
+        },
+        "uniqueItems": true
+      },
+      "matrix": {
+        "type": "array",
+        "items": {
+          "type": "array",
+          "items": {
+            "type": "integer"
+          }
+        }
+      },
+      "empty": {
+        "type": "array",
+        "items": {
+          "type": "string"
+        }
+      },
+      "mixed": {
+        "type": "array",
+        "items": {
+          "type": [
+            "string",
+            "integer",
+            "null"
+          ]
+        }
+      }
+    }
+  },
+  "secrets": [
+    "/stages/*/stageToken"
+  ]
+}

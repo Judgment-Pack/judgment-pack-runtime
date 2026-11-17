@@ -1,0 +1,65 @@
+{
+  "registryFormatVersion": "1.0.0",
+  "id": "https://example.org/registries/ts-constants",
+  "version": "1.0.0",
+  "environments": [
+    "dev"
+  ],
+  "owners": [
+    "platform"
+  ],
+  "secretScopes": {
+    "dev": {
+      "gcp-sm": [
+        "example-dev"
+      ]
+    }
+  },
+  "kinds": [
+    {
+      "kind": "database",
+      "id": "https://example.org/kinds/database",
+      "version": "1.0.0",
+      "digest": "sha256:0151d8bc9e694f503931b88d7f061b1d6dd49685a2871ea09d3f5cb815256709"
+    },
+    {
+      "kind": "pipeline",
+      "id": "https://example.org/kinds/pipeline",
+      "version": "1.0.0",
+      "digest": "sha256:b9f07496938f5147241b3a1349e86a57cbdd767932b71f41697074a37d18d36c"
+    },
+    {
+      "kind": "service",
+      "id": "https://example.org/kinds/service",
+      "version": "1.0.0",
+      "digest": "sha256:f4e9c729477dd327895f5b0e3292e2c52bfd2bf637067588673a45a2b8128bf2"
+    }
+  ],
+  "entries": [
+    {
+      "kind": "database",
+      "id": "orders",
+      "owner": "platform",
+      "value": {
+        "host": "h",
+        "password": "secret:gcp-sm:projects/example-dev/secrets/probe-pw/versions/3"
+      }
+    },
+    {
+      "kind": "pipeline",
+      "id": "release",
+      "owner": "platform",
+      "value": {
+        "password": "secret:gcp-sm:projects/example-dev/secrets/probe-pw/versions/4"
+      }
+    },
+    {
+      "kind": "service",
+      "id": "api",
+      "owner": "platform",
+      "value": {
+        "password": "secret:gcp-sm:projects/example-dev/secrets/probe-pw/versions/5"
+      }
+    }
+  ]
+}

@@ -1,0 +1,69 @@
+{
+  "registryFormatVersion": "1.0.0",
+  "id": "https://example.org/registries/ts-constants",
+  "version": "1.0.0",
+  "environments": [
+    "staging"
+  ],
+  "owners": [
+    "platform"
+  ],
+  "secretScopes": {
+    "staging": {
+      "gcp-sm": [
+        "example-staging"
+      ]
+    }
+  },
+  "kinds": [
+    {
+      "kind": "pipeline",
+      "id": "https://example.org/kinds/pipeline",
+      "version": "1.0.0",
+      "digest": "sha256:ea4076e667f8345a8f146411ebaf88096839eb537fcefb2a47e7dd47a62d8139"
+    }
+  ],
+  "entries": [
+    {
+      "kind": "pipeline",
+      "id": "release",
+      "owner": "platform",
+      "value": {
+        "stages": [
+          {
+            "name": "build",
+            "retries": 2,
+            "stageToken": "secret:gcp-sm:projects/example-staging/secrets/release-build-token/versions/5"
+          },
+          {
+            "name": "test"
+          },
+          {
+            "name": "deploy",
+            "stageToken": "secret:gcp-sm:projects/example-staging/secrets/release-deploy-token/versions/6"
+          }
+        ],
+        "tags": [
+          "nightly",
+          "signed"
+        ],
+        "matrix": [
+          [
+            1,
+            2
+          ],
+          [
+            3
+          ],
+          []
+        ],
+        "empty": [],
+        "mixed": [
+          "a",
+          1,
+          null
+        ]
+      }
+    }
+  ]
+}

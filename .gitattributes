@@ -65,3 +65,8 @@ cmd/jpack-emit-go-facts/internal/golden/** -text
 # The Go loader emitter's nested golden module (its vectors, expected files and
 # golden package) is compared byte for byte with what the emitter writes.
 cmd/jpack-emit-go-loader/golden/** -text
+
+# The TypeScript constants emitter's vectors and golden files are compared byte
+# for byte with what the emitter writes.
+cmd/jpack-emit-ts-constants/vectors/** -text
+cmd/jpack-emit-ts-constants/internal/golden/** -text

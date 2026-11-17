@@ -1,0 +1,63 @@
+{
+  "kindFormatVersion": "1.0.0",
+  "id": "https://example.org/kinds/database",
+  "version": "1.0.0",
+  "kind": "database",
+  "owner": "platform",
+  "schema": {
+    "type": "object",
+    "additionalProperties": false,
+    "required": [
+      "host",
+      "port"
+    ],
+    "properties": {
+      "host": {
+        "type": "string"
+      },
+      "port": {
+        "type": "integer",
+        "minimum": 1,
+        "maximum": 65535
+      },
+      "dbPassword": {
+        "type": "string"
+      },
+      "tokens": {
+        "type": "object",
+        "additionalProperties": {
+          "type": "string"
+        }
+      },
+      "grants": {
+        "type": "object",
+        "additionalProperties": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "role"
+          ],
+          "properties": {
+            "role": {
+              "type": "string"
+            },
+            "grantSecret": {
+              "type": "string"
+            }
+          }
+        }
+      }
+    }
+  },
+  "secrets": [
+    "/dbPassword",
+    "/tokens/*",
+    "/grants/*/grantSecret"
+  ],
+  "overlayable": [
+    "/host",
+    "/dbPassword",
+    "/tokens/*",
+    "/grants/*/grantSecret"
+  ]
+}
