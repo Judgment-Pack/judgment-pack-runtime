@@ -2,6 +2,19 @@
 
 All notable changes to tagged releases are documented here.
 
+## Unreleased
+
+- **The start-up module's refusals and limits are in the mutation table**
+  (docs/registry-mutation-table.md). The module reports no codes, so its rows are named by its
+  exported error values (`ErrLimit`, `ErrWorldReadable`, `ErrDocument` and the others) and its
+  exported limits (`MaxSecretBytes`, `MaxResolvedBytes`, `MaxResolvedDepth`): one row for each
+  function that uses one, 24 in all, each with the test that kills its recorded mutant.
+  `scripts/check-mutation-table.py` derives them from `startup/`'s source and fails on a
+  function with no row, and the `mutation-table` check now runs when `startup/` changes.
+  `TestReadFileRefusals` gains two files holding a value at the bound, a newline and one more
+  byte, which `ReadFile` would admit if it read one or two bytes fewer. No exported identifier,
+  message or behaviour of the module changes.
+
 ## 0.51.0 - 2026-11-17
 
 - **`jpack emit conformance` no longer reads an index with an offset table** (ADR-0099). The
