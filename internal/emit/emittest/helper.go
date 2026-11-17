@@ -70,6 +70,11 @@ func Link(dir, name string) error {
 //	sleep-child        sleep
 //	orphan PIDFILE     start a child with its stdio on the null device, write
 //	                   the child's pid to PIDFILE, answer and exit
+//	home-writer PIDFILE
+//	                   as orphan, with a child that writes into HOME without
+//	                   end; PIDFILE holds the emitter's pid, the child's pid
+//	                   and HOME, a line each
+//	home-writer-child  write into HOME without end
 //
 // For the conformance harness's checks:
 //
@@ -188,6 +193,27 @@ func Main(args []string) int {
 			return 73
 		}
 		return answer()
+	case "home-writer":
+		self, err := os.Executable()
+		if err != nil {
+			return 70
+		}
+		child := exec.Command(self, Switch, "home-writer-child")
+		if err := child.Start(); err != nil {
+			return 70
+		}
+		record := fmt.Sprintf("%d\n%d\n%s\n", os.Getpid(), child.Process.Pid, os.Getenv("HOME"))
+		if err := os.WriteFile(args[1], []byte(record), 0o600); err != nil {
+			return 73
+		}
+		return answer()
+	case "home-writer-child":
+		home := os.Getenv("HOME")
+		for i := 0; ; i++ {
+			dir := filepath.Join(home, "cache", strconv.Itoa(i%16))
+			_ = os.MkdirAll(dir, 0o700)
+			_ = os.WriteFile(filepath.Join(dir, "counter"), []byte(strconv.Itoa(i)), 0o600)
+		}
 	case "sleep-child":
 		time.Sleep(time.Hour)
 		return 0
