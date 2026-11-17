@@ -2,10 +2,7 @@ package emit
 
 import (
 	"context"
-	"os"
-	"path/filepath"
 	"slices"
-	"strings"
 	"testing"
 	"time"
 )
@@ -39,28 +36,50 @@ func TestANonZeroExitIsStillAProcessFailure(t *testing.T) {
 	}
 }
 
-// An interrupt while the emitter runs ends it, and the run is refused with
-// EMIT-INTERRUPTED, not EMIT-PROCESS: the emitter neither failed nor ran out
-// of time.
-func TestAnInterruptDuringTheRunIsNotAProcessFailure(t *testing.T) {
-	root := testRepo(t)
-	// The emitter writes its pid and its child's, relative to the root.
-	pids := filepath.Join(root, "pids.txt")
-	m := mustManifest(t, manifestDoc([]string{"sleep", "pids.txt"}, map[string]any{"environments": "all"}))
+// interruptAfterWait has the next runs' afterWait cancel ctx, as an
+// interrupt to jpack that comes once the emitter has ended; the first run only
+// when first is set.
+func interruptAfterWait(t *testing.T, first bool) (context.Context, *int) {
+	t.Helper()
 	ctx, cancel := context.WithCancel(context.Background())
-	defer cancel()
-	go func() {
-		deadline := time.Now().Add(20 * time.Second)
-		for time.Now().Before(deadline) {
-			if data, err := os.ReadFile(pids); err == nil && strings.HasSuffix(string(data), "\n") {
-				break
-			}
-			time.Sleep(10 * time.Millisecond)
+	t.Cleanup(cancel)
+	runs := 0
+	saved := afterWait
+	afterWait = func() {
+		runs++
+		if !first || runs == 1 {
+			cancel()
 		}
-		cancel() // as an interrupt to jpack does
-	}()
+	}
+	t.Cleanup(func() { afterWait = saved })
+	return ctx, &runs
+}
+
+// What ended the emitter decides the code: one that exited non-zero is
+// EMIT-PROCESS though an interrupt came before the outcome was decided.
+func TestAnInterruptAfterANonZeroExitIsStillAProcessFailure(t *testing.T) {
+	root := testRepo(t)
+	ctx, runs := interruptAfterWait(t, false)
+	m := mustManifest(t, manifestDoc([]string{"exit", "3"}, map[string]any{"environments": "all"}))
 	report := Emit(ctx, m, nil, Inputs{Registry: testRegistry(t)}, Options{Root: root, Timeout: time.Minute})
-	if report.Outcome == OutcomeWritten || !slices.Equal(codes(report.Diagnostics), []string{"EMIT-INTERRUPTED@/command"}) {
-		t.Fatalf("report: %s", reportJSON(t, report))
+	if *runs != 1 || !slices.Equal(codes(report.Diagnostics), []string{"EMIT-PROCESS@/command"}) {
+		t.Fatalf("runs %d, report: %s", *runs, reportJSON(t, report))
+	}
+}
+
+// An emitter that exited 0 with a valid response before the interrupt keeps
+// its response: the run is not refused for an interrupt that came after it.
+// The interrupt then stops the next environment's run from starting, and the
+// refusal is reported once.
+func TestAnInterruptAfterACleanExitKeepsTheResponse(t *testing.T) {
+	root := testRepo(t)
+	ctx, runs := interruptAfterWait(t, true)
+	m := mustManifest(t, manifestDoc([]string{"request", "gen/req"}, map[string]any{"environments": "each"}))
+	report := Emit(ctx, m, nil, Inputs{Registry: testRegistry(t)}, Options{Root: root, Timeout: time.Minute})
+	if *runs != 1 || len(report.Runs) != 1 || report.Runs[0].ResponseDigest == "" || report.Outcome == OutcomeWritten || !slices.Equal(codes(report.Diagnostics), []string{"EMIT-INTERRUPTED@/command"}) {
+		t.Fatalf("runs %d, report: %s", *runs, reportJSON(t, report))
+	}
+	if _, _, ok := onDisk(t, root, "gen/req/dev/request.json"); ok {
+		t.Fatal("the interrupted run wrote a file")
 	}
 }

@@ -109,6 +109,40 @@ func TestAnInterruptDuringTheRenamesFinishesThem(t *testing.T) {
 	}
 }
 
+// A signal that comes once a vector's update is written, after EndWrite, is
+// still acted on: the run stops at that vector, keeps its updated row and
+// leaves the next vector's expected/ as it was.
+func TestAnInterruptAfterAnUpdateStopsTheNextVector(t *testing.T) {
+	f := newFixture(t)
+	m := f.manifest(requestMode, nil)
+	f.registryVector("a", map[string]string{"expected/gen/old": "old\n"})
+	f.registryVector("b", map[string]string{"expected/gen/old": "old\n"})
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	writes, ends := 0, 0
+	report := Run(ctx, m, f.vectors, Options{Root: f.root, Timeout: time.Minute, Update: true,
+		BeginWrite: func() bool { writes++; return true },
+		EndWrite: func() {
+			ends++
+			cancel() // as a signal once the write has ended
+		}})
+	if writes != 1 || ends != 1 {
+		t.Fatalf("writes %d, ends %d", writes, ends)
+	}
+	if names := vectorNames(t, filepath.Join(f.vectors, "a", "expected", "gen")); !slices.Equal(names, []string{"req"}) {
+		t.Fatalf("a's expected/gen after the update: %v", names)
+	}
+	if names := vectorNames(t, filepath.Join(f.vectors, "b", "expected", "gen")); !slices.Equal(names, []string{"old"}) {
+		t.Fatalf("b's expected/gen after the interrupt: %v", names)
+	}
+	if report.Outcome != OutcomeNotRun || len(report.Diagnostics) != 1 || report.Diagnostics[0].Code != "EMIT-INTERRUPTED" || report.Diagnostics[0].Location.Path != "a" {
+		t.Fatalf("interrupted after a's update: %s", dump(report))
+	}
+	if len(report.Rows) != 1 || report.Rows[0].Vector != "a" || report.Rows[0].Reason != reasonUpdated {
+		t.Fatalf("rows after an interrupt that followed an update: %s", dump(report))
+	}
+}
+
 // wantExpected checks that dir holds expected/ and no temporary directory
 // beside it, that expected/ lists names, and, unless old is empty, that
 // expected/gen/old still reads old.

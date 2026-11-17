@@ -540,7 +540,8 @@ func pathSafety(run *vectorRun, row Row) Row {
 		process := false
 		for _, d := range result.Diagnostics {
 			switch {
-			case d.Code == "EMIT-PROCESS":
+			case d.Code == "EMIT-PROCESS" || d.Code == "EMIT-INTERRUPTED":
+				// The run ended without a response to judge.
 				process = true
 			case d.Code == "EMIT-RESPONSE":
 				if isDiagnosticPointer(d.Location.Pointer) {

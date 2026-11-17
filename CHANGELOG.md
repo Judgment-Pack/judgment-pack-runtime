@@ -11,12 +11,13 @@ All notable changes to tagged releases are documented here.
   service-level guarantee. The conformance claim in CONFORMANCE.md is unchanged.
 - **An interrupted emitter run has a code of its own** (ADR-0098). `jpack emit` sent an interrupt
   or SIGTERM before its write, or while its emitter runs, is now refused with the new provisional
-  code `EMIT-INTERRUPTED` at `/command`, where it gave `EMIT-PROCESS` even when every emitter
-  exited 0. `EMIT-PROCESS` keeps an emitter that could not be started, exited non-zero or ran out
-  of time. `jpack emit conformance` reports an interrupt with `EMIT-INTERRUPTED` at the vector,
-  where it gave `EMIT-HARNESS-BOUND`, so one code names an interrupt in both commands; the two
-  codes' fixed messages no longer mention an interrupt. The conformance claim in CONFORMANCE.md is
-  unchanged.
+  code `EMIT-INTERRUPTED`, once, at `/command`, where it gave `EMIT-PROCESS` even when every
+  emitter exited 0; no later environment's emitter is started. What ended the emitter decides:
+  one that exited non-zero or ran out of time is still `EMIT-PROCESS`, and one that exited 0
+  before the interrupt keeps its response. `jpack emit conformance` interrupted now reports
+  `EMIT-INTERRUPTED`, where v0.49.0 reported `EMIT-HARNESS-BOUND`, so one code names an interrupt
+  in both commands; the two codes' fixed messages no longer mention an interrupt. The conformance
+  claim in CONFORMANCE.md is unchanged.
 - **`jpack emit conformance --update` gates its write as `jpack emit` does** (ADR-0099). An
   interrupt or SIGTERM after a vector's clean run, before its `expected/` is replaced, now refuses
   the run at that vector (`EMIT-INTERRUPTED`) and leaves `expected/` untouched; before,
