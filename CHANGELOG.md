@@ -105,6 +105,9 @@ All notable changes to tagged releases are documented here.
     is reported once, not twice.
   - The emitter's `HOME` is removed even when the emitter took the owner's bits from a directory
     in it.
+  - `jpack terraform facts --help` and ADR-0097 no longer say that nothing is written unless every
+    line can be. That holds for a refusal. A write that fails partway exits 4 and may leave the
+    lines before it, so the example now runs `evaluate` only after `&&`.
 
 ## 0.47.0 - 2026-11-16
 

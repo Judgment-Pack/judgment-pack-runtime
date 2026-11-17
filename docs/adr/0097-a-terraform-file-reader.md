@@ -293,13 +293,15 @@ jpack terraform facts (--plan FILE | --state FILE) --type T[,T...] [--mode manag
   `{"facts":{"resource":<the §5 object>,"terraform":{"document","formatVersion","sha256"}},"id":"<address>"}`.
   This is RFC 8785 canonical, the line shape of `registry facts` (ADR-0095). `sha256` is the
   file's bare lower-case hex, as in the acquisition record.
-- **Nothing is written unless every line can be.** A refusal writes no line on standard output. On
-  standard error it writes the refusal's canonical JSON alone: code, sha256, size and the code's
+- **A refusal writes no line.** Every check runs before the first line is written, so a refused
+  run leaves standard output empty. On standard error it writes the refusal's canonical JSON alone: code, sha256, size and the code's
   fixed message. It never writes a value, a member name, a pointer or the path. The exit code is
   2, the "could not judge" that `registry facts` uses for an invalid registry (ADR-0092). A
   selection that matches nothing is an empty batch and exit 0, since "no database is destroyed"
   is a valid fact (§4). A file that cannot be opened or read, or a batch that cannot be written,
-  exits 4.
+  exits 4. A write that fails partway is not a refusal: the lines written before it, the last
+  perhaps cut short, stay on standard output. A pipeline uses the batch only after exit 0, as the
+  example's `&&` does, or runs under `set -e` or `pipefail`.
 - **Each facts document is held to the facts-document limit** of `registry facts`
   (`FACTS-DOCUMENT-LIMIT`: 10 MiB, depth 128, 250,000 nodes, 1 MiB per string), the limit evaluate
   reads a facts document under. One resource over it refuses the whole run. Its line is not
@@ -321,8 +323,8 @@ jpack terraform facts (--plan FILE | --state FILE) --type T[,T...] [--mode manag
   instance (`...app[0]`). Those need `[*]`, as in `module.*[*].google_sql_user.*[*]`.
 
 ```
-jpack terraform facts --plan plan.json --type google_sql_user --actions delete,update > changes.jsonl
-jpack experimental evaluate --pack-id sql-user-change --batch changes.jsonl --format json --require-outcome allowed
+jpack terraform facts --plan plan.json --type google_sql_user --actions delete,update > changes.jsonl &&
+  jpack experimental evaluate --pack-id sql-user-change --batch changes.jsonl --format json --require-outcome allowed
 ```
 
 The pack reads `/resource/actions`, `/resource/before/...` and `/resource/after/...` for a plan,

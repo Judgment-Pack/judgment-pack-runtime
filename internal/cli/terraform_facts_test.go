@@ -557,3 +557,42 @@ func TestTerraformFactsHoldsTheBatchIDLimit(t *testing.T) {
 		t.Fatalf("the diagnostic carries the address: %q", stderr)
 	}
 }
+
+// failAfterFirstWrite takes its first write and fails every one after it.
+type failAfterFirstWrite struct{ bytes.Buffer }
+
+func (w *failAfterFirstWrite) Write(p []byte) (int, error) {
+	if w.Len() > 0 {
+		return 0, os.ErrClosed
+	}
+	return w.Buffer.Write(p)
+}
+
+// TestTerraformFactsWriteFailurePartwayLeavesEarlierOutput holds the help
+// text's account of a write that fails partway: it is an error (exit 4), not
+// a refusal, and what was written before it stays written, so a pipeline
+// must check the exit code before it uses the batch.
+func TestTerraformFactsWriteFailurePartwayLeavesEarlierOutput(t *testing.T) {
+	var resources []tfResource
+	for i := range 200 {
+		name := fmt.Sprintf("u%03d", i)
+		resources = append(resources, tfResource{address: "synthetic_sql_user." + name, typ: "synthetic_sql_user", name: name, values: map[string]any{"role": "reader"}})
+	}
+	data := tfState(t, tfModule("", resources))
+	src := terraformfile.Source{Document: terraformfile.DocumentState, MaxBytes: terraformfile.DefaultMaxBytes, Select: terraformfile.Select{Types: []string{"synthetic_sql_user"}, Max: terraformfile.DefaultSelectMax}}
+	acquisition, refusal, err := terraformfile.Read(bytes.NewReader(data), src)
+	if err != nil || refusal != nil {
+		t.Fatalf("%v %v", refusal, err)
+	}
+	var whole bytes.Buffer
+	if err := writeTerraformFacts(&whole, acquisition); err != nil {
+		t.Fatal(err)
+	}
+	out := &failAfterFirstWrite{}
+	if err := writeTerraformFacts(out, acquisition); err == nil {
+		t.Fatal("a failed write was not reported")
+	}
+	if out.Len() == 0 || out.Len() >= whole.Len() || !bytes.HasPrefix(whole.Bytes(), out.Bytes()) {
+		t.Fatalf("wrote %d of %d bytes before the failure", out.Len(), whole.Len())
+	}
+}
