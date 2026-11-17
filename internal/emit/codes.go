@@ -108,7 +108,7 @@ var Codes = map[string]codeInfo{
 	"EMIT-REQUEST-VERSION": {SeverityError, "The host writes no request version the manifest lists, or none that carries the registry's resolved format."},
 	"EMIT-KIND-RANGE":      {SeverityError, "A pinned kind the manifest reads has a version outside the manifest's range."},
 	"EMIT-REQUEST":         {SeverityError, "The request could not be formed: the registry is not valid, its pins and declarations do not match, a facts contract is refused or exceeds its bounds, two contracts share an id and version, or the request exceeds its size bound."},
-	"EMIT-PROCESS":         {SeverityError, "The emitter could not be started, exited non-zero, or did not finish within the time limit."},
+	"EMIT-PROCESS":         {SeverityError, "The emitter could not be started, exited non-zero, or did not finish within the time limit, or the run was interrupted before it wrote anything."},
 	"EMIT-RESPONSE":        {SeverityError, "The emitter's output is not one valid response: its form, a path, a bound, or an error diagnostic it reported."},
 	"EMIT-DEPRECATED":      {SeverityWarning, "The emitter's manifest is deprecated."},
 	// The conformance harness's (ADR-0099).

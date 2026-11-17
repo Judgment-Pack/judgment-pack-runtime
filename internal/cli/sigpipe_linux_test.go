@@ -52,4 +52,22 @@ func TestTheEmitterDoesNotInheritSIGPIPEIgnored(t *testing.T) {
 	if mask&(1<<(sigpipe-1)) != 0 {
 		t.Fatalf("the emitter started with SIGPIPE ignored (SigIgn %s)", strings.TrimSpace(string(line)))
 	}
+	// The emitter here is a Go test binary, whose runtime installs its own
+	// SIGPIPE handler at start whatever it inherited, so the line above
+	// cannot tell. What can: jpack ran in this process, and a disposition
+	// this process holds ignored is what an exec'd emitter inherits.
+	status, err := os.ReadFile("/proc/self/status")
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, field := range strings.Split(string(status), "\n") {
+		if hex, ok := strings.CutPrefix(field, "SigIgn:"); ok {
+			own, err := strconv.ParseUint(strings.TrimSpace(hex), 16, 64)
+			if err != nil || own&(1<<(sigpipe-1)) != 0 {
+				t.Fatalf("jpack holds SIGPIPE ignored, which an emitter inherits (SigIgn %s): %v", strings.TrimSpace(hex), err)
+			}
+			return
+		}
+	}
+	t.Fatal("no SigIgn line in /proc/self/status")
 }

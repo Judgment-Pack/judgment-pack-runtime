@@ -40,6 +40,12 @@ type Options struct {
 	Environ []string
 	// Stderr receives the emitter's kept standard error when set.
 	Stderr io.Writer
+	// BeginWrite, when set, is called just before the write phase, once ctx
+	// is seen not done. It reports whether the write may start; false
+	// refuses the run as interrupted, writing nothing. The caller that sets
+	// it holds an interrupt back until the write has ended, so that a
+	// write once begun finishes.
+	BeginWrite func() bool
 }
 
 // Identity names an emitter by its manifest's id and version.
@@ -217,6 +223,11 @@ func Emit(ctx context.Context, m *Manifest, others []*Manifest, in Inputs, opts 
 		}
 	}
 	slices.Sort(stale)
+	// An interrupt before this point refuses the run with nothing written;
+	// a write once begun is not cut short by one (BeginWrite).
+	if ctx.Err() != nil || opts.BeginWrite != nil && !opts.BeginWrite() {
+		return report.Refuse(diagnostic("EMIT-PROCESS", Location{Document: DocumentManifest, Pointer: "/command"}))
+	}
 	written, deleted, failures := write(opts.Root, files, stale, states, parents)
 	report.Written, report.Deleted = written, deleted
 	if len(failures) > 0 {

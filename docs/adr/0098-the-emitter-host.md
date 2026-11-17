@@ -139,6 +139,11 @@ response or the diagnostics that refuse it. It works as follows.
   limit does: the group is killed, `HOME` (and the harness's repository copy) is removed, and then
   jpack exits. The emitter's own group is not the terminal's foreground group, so without this the
   terminal's interrupt would end jpack and leave the emitter running.
+- `jpack emit` checks for an interrupt just before its write phase, and refuses the run with
+  `EMIT-PROCESS` at `/command`, nothing written, if one came. Once the write has begun, the signals
+  stay caught until jpack exits, so the write finishes and leaves no staged `.jpack-emit-*` file or
+  partly applied response. Before that, a second signal ends jpack at once, even during a copy. The
+  write is bounded by the response's bounds, so holding the signals costs little.
 - Standard error is counted, and its first 64 KiB are kept. They are passed through only with
   `--emitter-stderr`.
 - `RunOptions.Override` sets variables after the environment is formed, for the harness's
