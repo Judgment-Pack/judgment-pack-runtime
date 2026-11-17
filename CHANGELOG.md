@@ -108,6 +108,9 @@ All notable changes to tagged releases are documented here.
   - `jpack terraform facts --help` and ADR-0097 no longer say that nothing is written unless every
     line can be. That holds for a refusal. A write that fails partway exits 4 and may leave the
     lines before it, so the example now runs `evaluate` only after `&&`.
+  - The start-up module's `ReadFile` opens a file without blocking on Unix, so a named pipe put in
+    the file's place between its first check and the open is refused rather than waited on. Its
+    exported API is unchanged.
 
 ## 0.47.0 - 2026-11-16
 
