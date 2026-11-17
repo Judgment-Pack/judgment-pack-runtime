@@ -6,6 +6,8 @@ import (
 	"errors"
 	"os"
 	"os/exec"
+	"strconv"
+	"sync"
 	"syscall"
 	"time"
 )
@@ -58,3 +60,23 @@ func waitProcessGroup(process *os.Process, bound time.Duration) {
 		time.Sleep(groupPoll)
 	}
 }
+
+// closeInherited marks every descriptor above standard error that this
+// process holds close-on-exec, so that the emitter inherits none of them: Go
+// opens its own descriptors close-on-exec, but one jpack itself inherited
+// without the flag would pass on to the emitter. It runs once per process,
+// before the first emitter starts (markInherited).
+func closeInherited() {
+	entries, err := os.ReadDir("/dev/fd")
+	if err != nil {
+		return
+	}
+	for _, entry := range entries {
+		if fd, err := strconv.Atoi(entry.Name()); err == nil && fd > 2 {
+			syscall.CloseOnExec(fd)
+		}
+	}
+}
+
+// markInherited runs closeInherited once; a test replaces it to run it again.
+var markInherited = sync.OnceFunc(closeInherited)

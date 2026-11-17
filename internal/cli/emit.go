@@ -67,6 +67,9 @@ func (a *App) emitCommand() *cobra.Command {
 				return invocation("JPS-INVOCATION-INPUT", "Supply --registry and --kinds together.")
 			}
 			realRoot, err := emit.RealRoot(root)
+			if errors.Is(err, emit.ErrRootReparse) {
+				return invocation("JPS-INVOCATION-INPUT", "--root passes through a junction or other reparse point; name the directory it leads to.")
+			}
 			if err != nil {
 				return invocation("JPS-INVOCATION-INPUT", "--root must name a directory.")
 			}

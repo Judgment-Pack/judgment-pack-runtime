@@ -164,6 +164,18 @@ func Main(args []string) int {
 			}
 		}
 		return 70
+	case "fds":
+		// Unix only: the descriptors this process started with, one per
+		// line, as /dev/fd lists them (the listing's own included).
+		entries, err := os.ReadDir("/dev/fd")
+		if err != nil {
+			return 70
+		}
+		var fds []string
+		for _, entry := range entries {
+			fds = append(fds, entry.Name())
+		}
+		return answer(map[string]any{"path": args[1], "text": strings.Join(fds, "\n") + "\n"})
 	case "exit":
 		code, _ := strconv.Atoi(args[1])
 		return code

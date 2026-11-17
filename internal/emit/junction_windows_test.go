@@ -4,6 +4,7 @@ package emit
 
 import (
 	"encoding/binary"
+	"errors"
 	"os"
 	"path/filepath"
 	"syscall"
@@ -123,5 +124,18 @@ func TestAJunctionAboveAResponsePathIsALink(t *testing.T) {
 	_, _, diagnostics := preflight(root, []File{{Path: "gen/out/a.txt", Data: []byte("a\n"), Mode: ModeRegular}})
 	if len(diagnostics) != 1 || diagnostics[0].Code != "EMIT-LINK" || diagnostics[0].Location.Path != "gen/out" {
 		t.Fatalf("diagnostics: %+v; want one EMIT-LINK at gen/out", diagnostics)
+	}
+}
+
+// A root below a junction is refused with ErrRootReparse, not resolved.
+func TestARootBelowAJunctionIsRefused(t *testing.T) {
+	target := t.TempDir()
+	if err := os.Mkdir(filepath.Join(target, "repo"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	link := filepath.Join(t.TempDir(), "j")
+	junction(t, link, target)
+	if _, err := RealRoot(filepath.Join(link, "repo")); !errors.Is(err, ErrRootReparse) {
+		t.Fatalf("a root below a junction: %v", err)
 	}
 }
