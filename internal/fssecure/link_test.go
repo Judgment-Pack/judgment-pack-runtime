@@ -16,9 +16,11 @@ func (m modeInfo) IsDir() bool        { return fs.FileMode(m).IsDir() }
 func (m modeInfo) Sys() any           { return nil }
 
 // A symbolic link is refused everywhere. On Windows a reparse point Go reads
-// as irregular is refused when it is a directory, as a junction is, and left
-// to the same-file check when it is a file, as a synced placeholder is;
-// elsewhere an irregular entry is refused.
+// as irregular is refused when it is a directory and left to the same-file
+// check when it is a file, as a synced placeholder is; elsewhere an irregular
+// entry is refused. Go clears ModeDir on a junction, so the directory bit
+// comes from its attributes (TestLinkLikeReadsTheDirectoryAttribute, on
+// Windows); the ModeIrregular|ModeDir row only keeps the mode check honest.
 func TestLinkLike(t *testing.T) {
 	saved := linkGOOS
 	defer func() { linkGOOS = saved }()
@@ -40,8 +42,8 @@ func TestLinkLike(t *testing.T) {
 		{"windows", fs.ModeDir, false},
 	} {
 		linkGOOS = c.goos
-		if got := linkLike(modeInfo(c.mode)); got != c.want {
-			t.Errorf("%s: linkLike(%v) = %v", c.goos, c.mode, got)
+		if got := LinkLike(modeInfo(c.mode)); got != c.want {
+			t.Errorf("%s: LinkLike(%v) = %v", c.goos, c.mode, got)
 		}
 	}
 }
