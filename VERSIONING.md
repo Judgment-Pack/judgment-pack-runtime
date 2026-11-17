@@ -171,7 +171,8 @@ formats, each with its selector, all `"1.0.0"`:
 RFC 0037 names the three `FACTS-*` advisories. `FACTS-DOCUMENT-LIMIT`, `FACTS-CONTRACT-LIMIT`,
 `FACTS-CONTRACT-FORM`, `FACTS-CONTRACT-ORDER` and `FACTS-CHECK-LIMIT` are this runtime's,
 provisional in the same way. So is `FACTS-ID-LIMIT`, which `jpack terraform facts` reports for a
-resource address over the id limit `evaluate --batch` reads (ADR-0097's amendment).
+resource id (its address, with a deposed object's key) over the id limit `evaluate --batch` reads
+(ADR-0097's amendment).
 
 The `terraform-file` reader (`internal/terraformfile`, ADR-0097) is reached through
 `jpack terraform facts`, RFC 0038 §6's batch tool. RFC 0038 calls the batch a product format of

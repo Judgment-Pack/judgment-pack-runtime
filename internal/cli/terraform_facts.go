@@ -42,12 +42,13 @@ func (a *App) terraformFactsCommand() *cobra.Command {
 	command := &cobra.Command{
 		Use:   "facts (--plan FILE | --state FILE) --type T[,T...] [--mode managed|data] [--address PATTERN] [--actions a,b] [--max N] [--max-bytes N]",
 		Short: "Write a plan's or a state's selected resources as a facts batch for evaluate's outcome gate (spec RFC 0038)",
-		Long: "Read the output of terraform show -json for a saved plan (--plan) or for state (--state) by RFC 0038 §2 to §5, then write one batch line per selected resource, sorted by address: " +
-			`{"facts": {"resource": <resource>, "terraform": {"document", "formatVersion", "sha256"}}, "id": "<address>"}, RFC 8785 canonical, one per line. ` +
+		Long: "Read the output of terraform show -json for a saved plan (--plan) or for state (--state) by RFC 0038 §2 to §5, then write one batch line per selected resource, sorted by id: " +
+			`{"facts": {"resource": <resource>, "terraform": {"document", "formatVersion", "sha256"}}, "id": "<id>"}, RFC 8785 canonical, one per line. ` +
+			"A resource's id is its address; a deposed object, one an apply replaced but has not yet destroyed, has the id <address> deposed <key>, carries its key as the resource's deposed member, and follows its current object. Two resources of one id refuse the file (TF-DOCUMENT). " +
 			"Every value marked sensitive is removed, with its member, before anything is selected, and a resource without its sensitivity mirror refuses the file. Numbers are decimal strings in one normal form. " +
 			"--type selects resources of these types (at most 64, repeat it or separate with commas), --mode managed (the default) or data resources, --address resources whose whole address matches the pattern, where * matches any run of characters other than '.', '[' and ']', " +
 			"and --actions, with --plan only, changes whose actions include one of create, update, delete, read and no-op. More selected resources than --max (1 to 10000, default 1000) refuse the file, as does a file longer than --max-bytes (1 to 268435456, default 67108864). " +
-			"A refusal writes no line: a refused file, a resource whose address is longer than the batch id limit of evaluate --batch (FACTS-ID-LIMIT), or a resource whose facts document exceeds the facts-document limit registry facts uses (FACTS-DOCUMENT-LIMIT), writes its code, the file's sha256 and size, and a fixed message to standard error, never anything read from the file, and exits 2. " +
+			"A refusal writes no line: a refused file, a resource whose id is longer than the batch id limit of evaluate --batch (FACTS-ID-LIMIT), or a resource whose facts document exceeds the facts-document limit registry facts uses (FACTS-DOCUMENT-LIMIT), writes its code, the file's sha256 and size, and a fixed message to standard error, never anything read from the file, and exits 2. " +
 			"Standard input is read only to one byte past --max-bytes, so a longer one is refused TF-SIZE with its code and a fixed message alone: its sha256 and size are not known. " +
 			"A batch whose writing fails partway exits 4 and may leave the lines before the failure, the last perhaps cut short, on standard output, so use the batch only after an exit 0. " +
 			"Exit 0 when the batch was written (an empty one included), 2 when the file was refused, 3 for an unusable command line, and 4 when the file could not be read or the batch written.",
@@ -228,11 +229,11 @@ func terraformFactsDocument(dst []byte, resource terraformfile.Resource, tail []
 }
 
 // CodeFactsIDLimit is this runtime's provisional code for a selected
-// resource whose address, the id of its batch line, is not 1 to
-// MaxBatchIDBytes bytes: evaluate --batch would refuse that line.
+// resource whose id, the id of its batch line, is not 1 to MaxBatchIDBytes
+// bytes: evaluate --batch would refuse that line.
 const CodeFactsIDLimit = "FACTS-ID-LIMIT"
 
-var factsIDLimitMessage = fmt.Sprintf("A selected resource's address, the id of its batch line, is not 1 to %d bytes long, the id evaluate --batch reads.", MaxBatchIDBytes)
+var factsIDLimitMessage = fmt.Sprintf("A selected resource's id (its address, and a deposed object's key), the id of its batch line, is not 1 to %d bytes long, the id evaluate --batch reads.", MaxBatchIDBytes)
 
 // terraformFactsMessage is the fixed message of a code terraformFactsCheck
 // reports.
@@ -244,14 +245,14 @@ func terraformFactsMessage(code string) string {
 }
 
 // terraformFactsCheck returns the code that refuses the whole run, or "":
-// FACTS-ID-LIMIT when a selected resource's address is not an id evaluate
+// FACTS-ID-LIMIT when a selected resource's id is not an id evaluate
 // --batch reads (1 to MaxBatchIDBytes bytes), checked over every resource
 // first, then FACTS-DOCUMENT-LIMIT when a facts document is over the limit
 // registry facts holds its documents to. A resource over either refuses the
 // run, rather than leaving its line out of the batch.
 func terraformFactsCheck(acquisition *terraformfile.Acquisition) (string, error) {
 	for _, resource := range acquisition.Resources {
-		if resource.Address == "" || len(resource.Address) > MaxBatchIDBytes {
+		if resource.ID == "" || len(resource.ID) > MaxBatchIDBytes {
 			return CodeFactsIDLimit, nil
 		}
 	}
@@ -270,7 +271,7 @@ func terraformFactsCheck(acquisition *terraformfile.Acquisition) (string, error)
 }
 
 // writeTerraformFacts writes one batch line per selected resource, in the
-// acquisition's address order: {"facts":{"resource":…,"terraform":{…}},"id":…}.
+// acquisition's id order, with the resource's id as the line's: {"facts":{"resource":…,"terraform":{…}},"id":…}.
 // Every member is RFC 8785 canonical, and the members are in code-point
 // order, so the line is canonical.
 func writeTerraformFacts(out io.Writer, acquisition *terraformfile.Acquisition) error {
@@ -281,7 +282,7 @@ func writeTerraformFacts(out io.Writer, acquisition *terraformfile.Acquisition) 
 	buffered := bufio.NewWriter(out)
 	var document []byte
 	for _, resource := range acquisition.Resources {
-		id, err := jcs.EncodeDocument(resource.Address)
+		id, err := jcs.EncodeDocument(resource.ID)
 		if err != nil {
 			return err
 		}

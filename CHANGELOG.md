@@ -4,6 +4,18 @@ All notable changes to tagged releases are documented here.
 
 ## Unreleased
 
+- **A deposed Terraform object is identified by its key** (dialect §4.5 step 4, ADR-0097
+  reading 4). An object an apply replaced but has not yet destroyed shares its resource's
+  address; the reader now reads its deposed key, `deposed` in a plan and `deposed_key` in a
+  state, which must be a non-empty string. A resource's id is its address, or its address,
+  ` deposed ` and the key. The acquired object carries the key as an optional `deposed` member,
+  and the acquired value is sorted by id: a current object first, then its deposed objects by
+  key, where before they kept the file's order. A key of another type, an empty key, or two
+  resources of the read section with one id, selected or not, is `TF-DOCUMENT`, and its fixed
+  message says so. `jpack terraform facts` writes the resource's id as each line's id, and holds
+  the id, not the address, to the 256-byte batch id bound (`FACTS-ID-LIMIT`). For a file with a
+  deposed object, the batch's bytes change: a current object and its deposed objects wrote lines
+  of one id, and each now has its own id and, when deposed, its `deposed` member. The conformance claim in CONFORMANCE.md is unchanged.
 - **A support and deprecation policy for the registry line** (VERSIONING.md). It covers
   `jpack registry`, `jpack emit`, `jpack emit conformance`, `jpack terraform facts`, their formats,
   codes and bounds, and the start-up module. Within major version 1 of the line, nothing is
