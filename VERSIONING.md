@@ -155,9 +155,9 @@ declares. The RFCs define the `REF-*` codes and `REG-DOC-NUMBER`. The registry c
 counted as written since the later amendment), `REG-BOUND-VALIDATION-WORK` (step 7's schema checks
 past their work bound, the same amendment), `REG-REPORT-TRUNCATED` and the `REG-YAML-*` codes among
 them. The location members are this runtime's own reading of the companion's rules. All of them are
-provisional until the companion's first release, `registry-v1.0.0`, which publishes it as released
-and not yet stable ([The registry line](#the-registry-line)): if the released list differs, this
-runtime adopts it under a new selector and says so in its release notes.
+provisional until the companion's first release, `registry-v1.0.0` (tag not yet created), which
+publishes it as released and not yet stable ([The registry line](#the-registry-line)): if the
+released list differs, this runtime adopts it under a new selector and says so in its release notes.
 
 <!-- PLACEHOLDER(1.0): confirm once tag registry-v1.0.0 exists -->
 
@@ -190,8 +190,8 @@ Its first accepted `format_version` table is the one this runtime names `propose
 `1.1` and `1.2`; state `1.0`), and the table's release number is left open. §4.5 has each
 accepted `format_version` backed by vectors written by hand to the shape that version documents,
 with no Terraform run and no recorded output. The codes, their fixed messages and the table are
-provisional until a released spec text carries §4.5 and names the table's release. If the
-released codes or table differ, this runtime adopts them and says so in its release notes.
+provisional until a spec release (tag not yet created) carries §4.5 and names the table's release.
+If the released codes or table differ, this runtime adopts them and says so in its release notes.
 
 <!-- PLACEHOLDER(1.0): spec tag carrying dialect §4.5 -->
 
@@ -394,7 +394,8 @@ It is stable from the release that names it so in its release notes. That releas
 everything the sections above call provisional: the codes are those of the released registry
 companion, the Terraform dialect's codes and `format_version` table are those of the released
 dialect companion, and each paragraph says so instead. Released, not stable: the line follows the
-companion's first release, `registry-v1.0.0`, which is published as released and not yet stable.
+companion's first release, `registry-v1.0.0` (tag not yet created), which is published as released
+and not yet stable.
 The companion becomes stable later, when a second, independently written reader agrees on its rows
 (its §15), and that changes nothing in this promise. A format with no selector of its own, such as
 the `jpack terraform facts` batch lines, is then promised as its bytes: a change to them for the

@@ -18,10 +18,11 @@ All notable changes to tagged releases are documented here.
   runtime's own; it now names the companion's planned first release, `registry-v1.0.0`. Each code
   is still provisional until its companion is released, and no code, severity, message or behaviour
   changes; the thirteen and `FACTS-ID-LIMIT` are no longer marked provisional in the source and the
-  mutation table. VERSIONING.md also states that `jpack-emit-go-facts`' refusal of open objects,
-  `anyOf` and mixed `*` objects is first-version scope and may be lifted in 1.x, and SECURITY.md
-  points to the registry line's support window. The conformance claim in CONFORMANCE.md is
-  unchanged.
+  mutation table: for the `EMIT-*` codes and `FACTS-ID-LIMIT`, that marking now says who named a
+  code, the companion or this runtime, and not whether its companion is released. VERSIONING.md
+  also states that `jpack-emit-go-facts`' refusal of open objects, `anyOf` and mixed `*` objects is
+  first-version scope and may be lifted in 1.x, and SECURITY.md points to the registry line's
+  support window. The conformance claim in CONFORMANCE.md is unchanged.
 
 ## 0.50.0 - 2026-11-17
 

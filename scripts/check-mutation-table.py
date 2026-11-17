@@ -162,8 +162,9 @@ def provisional_marks():
     """{code: 'yes', 'no' or 'n/a'} for each code whose provisional status the source marks: a code
     of `var Codes` in internal/emit/codes.go by its section's heading; a code held by a constant
     (Codes() in internal/terraformfile/codes.go names them, and every other FACTS- constant) as
-    provisional when the constant's comment says so; an emitter's x- code is n/a. The source marks
-    no other code, and the registry's tables mark none, so their rows are not compared."""
+    provisional when the constant's comment says so, and as not provisional otherwise unless a
+    registry table lists it too; an emitter's x- code is n/a. The source marks no other code, and
+    the registry's tables mark none, so their rows are not compared."""
     marks = section_marks('internal/emit/codes.go', 'Codes')
     held = []
     directory = 'internal/terraformfile'
@@ -183,6 +184,10 @@ def provisional_marks():
     for code, comment in held:
         if 'provisional' in comment:
             marks.setdefault(code, 'yes')
+    registry = set(map_table('internal/registry/diag.go', 'Codes')) | set(map_table('internal/registry/facts.go', 'FactsCodes'))
+    for code, comment in held:
+        if code not in registry:
+            marks.setdefault(code, 'no')
     for code in derive():
         if code.startswith('x-'):
             marks[code] = 'n/a'
