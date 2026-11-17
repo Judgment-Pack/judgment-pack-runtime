@@ -36,9 +36,11 @@ import (
 // object type, so neither its name nor its type is written. A pattern that
 // ends at an array item, or that may (below a position whose schema does not
 // say it is an object), is refused: an item cannot be left out without
-// changing the array. A pattern below an enum or a const with an object or
-// array value is refused too, as the value's literal type would hold the
-// member.
+// changing the array. A pattern that can match a position whose type holds a
+// literal is refused as well, as the literal could be the secret: one below
+// an enum or a const with an object or array value, whose literal type would
+// hold the member, and one that ends at a member the properties do not
+// declare, when the index signature's type holds a literal.
 
 // The bounds a schema is read within. A kind the registry admits is within
 // both (companion §3.3): its expanded size is at most 4096 subschemas, and a
@@ -222,7 +224,7 @@ func (b *builder) literals(values []any, ps patterns) *typeNode {
 		switch value.(type) {
 		case map[string]any, []any:
 			if len(ps) > 0 {
-				return b.refuse(codeSchemaUnsupported)
+				return b.refuse(codeSecretLiteral)
 			}
 			if holdsProto(value) {
 				return b.refuse(codeMemberProto)
@@ -398,8 +400,10 @@ func (b *builder) object(v map[string]any, ps patterns) *typeNode {
 	// The patterns below a member the properties do not declare: those whose
 	// first token is "*", and those whose first token is a literal that is
 	// not declared. One of the latter that ends here leaves out that one
-	// member; the index signature still holds the others.
+	// member; the index signature still holds the others, and still
+	// describes that one.
 	var below patterns
+	endsUndeclared := false
 	for _, p := range ps {
 		head := p[0]
 		if head.wildcard {
@@ -407,8 +411,12 @@ func (b *builder) object(v map[string]any, ps patterns) *typeNode {
 				return t
 			}
 			below = append(below, p[1:])
-		} else if _, declared := properties[head.literal]; !declared && len(p) > 1 {
-			below = append(below, p[1:])
+		} else if _, declared := properties[head.literal]; !declared {
+			if len(p) == 1 {
+				endsUndeclared = true
+			} else {
+				below = append(below, p[1:])
+			}
 		}
 	}
 	index := b.schema(additional, below, false)
@@ -432,7 +440,44 @@ func (b *builder) object(v map[string]any, ps patterns) *typeNode {
 		parts = append(parts, typeUndefined)
 	}
 	t.index = union(parts)
+	// The value at a secret member that the properties do not declare is one
+	// the index signature's type admits. A literal in that type, the
+	// additional members' or a declared member's joined to it, could be the
+	// secret itself, so the kind is refused rather than the type narrowed.
+	if endsUndeclared && holdsLiteral(t.index, map[*typeNode]bool{}) {
+		return b.refuse(codeSecretLiteral)
+	}
 	return t
+}
+
+// holdsLiteral says whether a type holds a literal type at any depth. A node
+// can be shared, so seen holds those already walked and the walk is linear
+// in the nodes built.
+func holdsLiteral(t *typeNode, seen map[*typeNode]bool) bool {
+	if seen[t] {
+		return false
+	}
+	seen[t] = true
+	switch t.op {
+	case opLiteral:
+		return true
+	case opArray:
+		return holdsLiteral(t.elem, seen)
+	case opObject:
+		for _, member := range t.members {
+			if holdsLiteral(member.t, seen) {
+				return true
+			}
+		}
+		return t.index != nil && holdsLiteral(t.index, seen)
+	case opUnion, opIntersection:
+		for _, part := range t.parts {
+			if holdsLiteral(part, seen) {
+				return true
+			}
+		}
+	}
+	return false
 }
 
 // ref is the type of the definition a $ref names, written where it is used.

@@ -685,7 +685,19 @@ func TestSchemaRefusals(t *testing.T) {
 		{"an empty type list", `{"type":[]}`, nil, codeSchemaUnsupported},
 		{"an empty enum", `{"enum":[]}`, nil, codeSchemaUnsupported},
 		{"too many branches", `{"anyOf":[` + strings.Repeat(`true,`, maxBranches) + `true]}`, nil, codeSchemaUnsupported},
-		{"a secret below an object const", `{"type":"object","properties":{"a":{"const":{"b":"x"}}}}`, []string{"/a/b"}, codeSchemaUnsupported},
+		{"a secret below an object const", `{"type":"object","properties":{"a":{"const":{"b":"x"}}}}`, []string{"/a/b"}, codeSecretLiteral},
+		{"a secret below an array enum", `{"type":"object","properties":{"a":{"enum":[["x"],["y"]]}}}`, []string{"/a/0"}, codeSecretLiteral},
+		// A secret at a member the properties do not declare is typed by the
+		// index signature, and a literal there could be the secret.
+		{"a secret undeclared member, a const index", `{"type":"object","properties":{"host":{"type":"string"}},"additionalProperties":{"type":"string","const":"secret:gcp-sm:projects/example-dev/secrets/p/versions/3"}}`, []string{"/password"}, codeSecretLiteral},
+		{"a secret undeclared member, an enum index", `{"type":"object","additionalProperties":{"enum":["a","b"]}}`, []string{"/password"}, codeSecretLiteral},
+		{"a secret undeclared member, an index through a $ref", `{"type":"object","additionalProperties":{"$ref":"#/$defs/v"},"$defs":{"v":{"const":"a"}}}`, []string{"/password"}, codeSecretLiteral},
+		{"a secret undeclared member, a literal deep in the index", `{"type":"object","additionalProperties":{"type":["string","array"],"items":{"anyOf":[{"type":"number"},{"const":"a"}]}}}`, []string{"/password"}, codeSecretLiteral},
+		{"a secret undeclared member, a declared member's literal in the index", `{"type":"object","properties":{"mode":{"const":"fast"}},"additionalProperties":{"type":"string"}}`, []string{"/password"}, codeSecretLiteral},
+		{"a secret undeclared member in an anyOf branch", `{"anyOf":[{"type":"object","properties":{"password":{"type":"string"}}},{"type":"object","additionalProperties":{"const":"a"}}]}`, []string{"/password"}, codeSecretLiteral},
+		{"a secret undeclared member in an allOf branch", `{"allOf":[{"type":"object"},{"type":"object","additionalProperties":{"anyOf":[{"type":"string"},{"const":"a"}]}}]}`, []string{"/password"}, codeSecretLiteral},
+		{"a secret undeclared member of an array item", `{"type":"object","properties":{"list":{"type":"array","items":{"type":"object","additionalProperties":{"enum":["a"]}}}}}`, []string{"/list/*/password"}, codeSecretLiteral},
+		{"a secret undeclared member below an undeclared one", `{"type":"object","additionalProperties":{"type":"object","additionalProperties":{"const":"a"}}}`, []string{"/*/password"}, codeSecretLiteral},
 		{"a secret array item", `{"type":"object","properties":{"keys":{"type":"array","items":{"type":"string"}}}}`, []string{"/keys/*"}, codeSecretInArray},
 		{"a secret array item by index", `{"type":"object","properties":{"keys":{"type":"array","items":{"type":"string"}}}}`, []string{"/keys/0"}, codeSecretInArray},
 		{"a secret that may be an array item", `{"type":"object","properties":{"any":true}}`, []string{"/any/*"}, codeSecretInArray},
@@ -1015,5 +1027,30 @@ func TestSecretsAreLeftOutOfTypeAndValue(t *testing.T) {
 	// the type and in the value.
 	if strings.Count(text, `"adminPass"`) != 2 || !strings.Contains(text, `"not-secret-here"`) {
 		t.Errorf("adminPass under user is not written once in the type and once in the value:\n%s", text)
+	}
+}
+
+// TestSecretUndeclaredMembersWithoutLiterals: a secret at a member the
+// properties do not declare is left out, and the kind is not refused, when
+// no literal can type it: an index signature of a type without one, or of
+// JsonValue. Nor is a declared secret member's const: the member is left
+// out, type and all.
+func TestSecretUndeclaredMembersWithoutLiterals(t *testing.T) {
+	m := readManifest(t)
+	secret := "secret:gcp-sm:projects/example-dev/secrets/pw/versions/3"
+	for name, schema := range map[string]string{
+		"a string index":    `{"type":"object","properties":{"host":{"type":"string"}},"additionalProperties":{"type":"string"}}`,
+		"a JsonValue index": `{"type":"object","properties":{"host":{"type":"string"}}}`,
+		"a declared const secret member": `{"type":"object","properties":{"host":{"type":"string"},"password":{"const":"` + secret + `"}},
+			"additionalProperties":{"type":"string"}}`,
+	} {
+		t.Run(name, func(t *testing.T) {
+			d := declaration(t, "database", schema, "/password")
+			text := generated(t, m, fixtureOf(t, []map[string]any{d},
+				entryOf(t, "database", "orders", `{"host":"h","password":"`+secret+`"}`)))
+			if strings.Contains(text, "secret:") || strings.Contains(text, "password") || !strings.Contains(text, `"host"`) {
+				t.Errorf("the file:\n%s", text)
+			}
+		})
 	}
 }

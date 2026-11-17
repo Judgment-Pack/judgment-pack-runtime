@@ -1,0 +1,28 @@
+{
+  "kindFormatVersion": "1.0.0",
+  "id": "https://example.org/kinds/service",
+  "version": "1.0.0",
+  "kind": "service",
+  "owner": "platform",
+  "schema": {
+    "anyOf": [
+      {
+        "type": "object",
+        "properties": {
+          "password": {
+            "type": "string"
+          }
+        }
+      },
+      {
+        "type": "object",
+        "additionalProperties": {
+          "const": "secret:gcp-sm:projects/example-dev/secrets/probe-pw/versions/5"
+        }
+      }
+    ]
+  },
+  "secrets": [
+    "/password"
+  ]
+}

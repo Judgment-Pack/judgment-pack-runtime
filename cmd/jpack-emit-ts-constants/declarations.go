@@ -26,6 +26,10 @@ const (
 	// A secret position is an array item, which cannot be left out without
 	// changing the array.
 	codeSecretInArray = "x-ts-secret-in-array"
+	// A secrets pattern can match a position whose type would hold a
+	// schema's literal, an enum or const value: the value at a secret
+	// position is a secret, and the literal could be it.
+	codeSecretLiteral = "x-ts-secret-literal"
 	// A name made from a kind name is a reserved word, or a name the
 	// generated code itself uses.
 	codeNameReserved = "x-ts-name-reserved"

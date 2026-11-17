@@ -205,10 +205,12 @@ All notable changes to tagged releases are documented here.
   its name included. The emitter checks every declaration against its pin: the SHA-256 of its
   RFC 8785 form must be the pin's digest, and its id and version the pin's. It refuses a missing,
   mismatched or unpinned declaration. It also refuses a schema it does not generate (`not` among
-  them), a secret position at an array item, a member or entry id `__proto__`, and a kind whose
-  names are reserved or collide; it never renames one. Each refusal is a response of no files and
-  an `x-ts-*` error diagnostic. Strings are written in ASCII with U+2028 and U+2029 escaped, and
-  numbers as the request gives them. Its 11 vectors are in RFC 0036 §5's layout. A test
+  them), a secret position at an array item, a secret position whose type would hold an `enum`
+  or `const` literal (an undeclared member typed by an index signature among them), a member or
+  entry id `__proto__`, and a kind whose names are reserved or collide; it never renames one. Each
+  refusal is a response of no files and an `x-ts-*` error diagnostic. Strings are written in ASCII
+  with U+2028 and U+2029 escaped, and numbers as the request gives them. Its 12 vectors are in
+  RFC 0036 §5's layout. A test
   type-checks their output and a consumer of it with `tsc --strict`, and is skipped when `tsc` is
   not on PATH. No `jpack` command changes. The conformance claim in CONFORMANCE.md is unchanged.
 

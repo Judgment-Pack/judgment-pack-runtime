@@ -120,8 +120,18 @@ have a pin.
   - one that ends at an array item, since an item cannot be left out without changing the array;
   - one below a position the schema does not narrow, whose last token is `*` or an index, since it
     may end at an item.
-- A pattern that would end inside an `enum` or `const` value is refused
-  (`x-ts-schema-unsupported`).
+- A pattern that can match a position whose type would hold a literal, an `enum` or `const` value,
+  is refused (`x-ts-secret-literal`), since the literal could be the secret. The kind is refused;
+  the type is never narrowed in its place. This covers:
+  - a pattern that would end inside an `enum` or `const` value with an object or array, whose
+    literal type would hold the member;
+  - a pattern that ends at a member the properties do not declare, when the index signature's
+    type holds a literal at any depth: the additional members' (directly, through a `$ref`, or in
+    a composition) or a declared member's joined to it. The value at that member is one the index
+    signature admits, so a literal there could be its reference. This holds in every `anyOf` and
+    `allOf` branch and in every array item's object, since each is an object type of its own.
+  A member that the properties declare and at which a pattern ends is left out, type and all, so
+  a literal in its schema is no refusal.
 - A string that looks like a secret reference at a position that is not a secret one is written
   like any other value. The `nested-object` vector holds one.
 
@@ -165,6 +175,9 @@ have a pin.
   and `jpack emit conformance` passes all six checks on them.
 - Bad, because a kind with a secret at an array item cannot be emitted. The kind must hold the
   secret in an object member, or the manifest must not read it.
+- Bad, because a kind with a secret at an undeclared member cannot be emitted when its index
+  signature's type holds a literal, even one that cannot be the secret's value. The kind must
+  declare the member, or keep literals out of that object's other members.
 - Bad, because a `$ref` used in many places is written out many times. The file bound limits
   this.
 - Bad, because the constants are read-only only to the compiler. JavaScript that ignores the types
