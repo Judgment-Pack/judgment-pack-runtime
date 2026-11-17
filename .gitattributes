@@ -10,6 +10,10 @@ internal/artifacts/jps/0.5.0/cases/carrier/trailing-whitespace.json -whitespace
 # their digests, and a vector's files are its bytes exactly.
 internal/audit/testdata/witness/** -text
 
+# The emitter conformance harness's golden vectors: expected/ is compared
+# with an emitter's response byte for byte.
+internal/emit/testdata/conformance/** -text
+
 # A trail the v0.30.0 writer wrote, compared byte for byte with what the
 # writer composes today.
 internal/audit/testdata/trail-v0.30.0.jsonl -text

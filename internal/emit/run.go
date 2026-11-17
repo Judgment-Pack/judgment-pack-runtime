@@ -51,6 +51,10 @@ type RunResult struct {
 	// Diagnostics are the host's: EMIT-ENV-UNSET warnings, and EMIT-PROCESS
 	// or EMIT-RESPONSE when the run failed.
 	Diagnostics []Diagnostic
+	// Started says whether the emitter's process was started. A run that
+	// fails before it (command[0] not found, no HOME) is EMIT-PROCESS too;
+	// the conformance harness counts only started runs as the emitter's.
+	Started bool
 }
 
 // waitDelay bounds how long a run waits, once the emitter has exited or been
@@ -158,7 +162,10 @@ func Run(ctx context.Context, m *Manifest, requestVersion string, request []byte
 	cmd.WaitDelay = waitDelay
 	ownProcessGroup(cmd)
 	cmd.Cancel = func() error { return killProcessGroup(cmd.Process) }
-	err = cmd.Run()
+	if err = cmd.Start(); err == nil {
+		result.Started = true
+		err = cmd.Wait()
+	}
 	// Whatever the emitter started and left running is in its process group,
 	// which is ended once the emitter has exited, whether or not it still
 	// holds the emitter's output open. A child that leaves the group (setsid)

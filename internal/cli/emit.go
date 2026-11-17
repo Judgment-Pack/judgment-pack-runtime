@@ -167,6 +167,7 @@ func (a *App) emitCommand() *cobra.Command {
 	command.Flags().DurationVar(&timeout, "timeout", emit.DefaultTimeout, "The wall-clock limit on each emitter run")
 	command.Flags().BoolVar(&passStderr, "emitter-stderr", false, "Pass the first 64 KiB of the emitter's standard error through to standard error")
 	command.Flags().StringVar(&root, "root", ".", "The repository root: the emitter's working directory, and what owns globs are relative to")
+	command.AddCommand(a.emitConformanceCommand())
 	return command
 }
 
