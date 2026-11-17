@@ -10,7 +10,12 @@
 // signature does not begin with an upper-case letter), such as a split index
 // (`link`) or a sparse index (`sdir`), either of which changes the set of
 // paths the entries give. An optional extension (signature 'A' to 'Z') is
-// passed over, as git's format allows.
+// passed over, except the two of threaded reading, the index entry offset
+// table (`IEOT`) and the end of index entries (`EOIE`), which are refused.
+// Git with several index threads reads the entries in blocks at the table's
+// offsets, each block's first version 4 path from no previous path, so an
+// index whose table disagrees with its entries would give git other paths
+// than this reader reads in order.
 package gitindex
 
 import (
@@ -355,16 +360,21 @@ func (r *reader) cstring() (string, bool) {
 // extensions reads the extensions after the entries, which must fill the
 // body exactly: each a four-byte signature, a four-byte size and that many
 // bytes. One whose signature does not begin with 'A' to 'Z' must be
-// understood to read the index, and this reader understands none.
+// understood to read the index, and this reader understands none. The two
+// of threaded reading, which give where git may begin reading entries, are
+// refused too (see the package documentation).
 func (r *reader) extensions() error {
 	for r.at < len(r.data) {
 		if len(r.data)-r.at < 8 {
 			return ErrFormat
 		}
-		signature := r.data[r.at]
+		signature := string(r.data[r.at : r.at+4])
 		size := uint64(binary.BigEndian.Uint32(r.data[r.at+4:]))
 		r.at += 8
-		if signature < 'A' || signature > 'Z' || size > uint64(len(r.data)-r.at) {
+		if signature[0] < 'A' || signature[0] > 'Z' || size > uint64(len(r.data)-r.at) {
+			return ErrFormat
+		}
+		if signature == "IEOT" || signature == "EOIE" {
 			return ErrFormat
 		}
 		r.at += int(size)

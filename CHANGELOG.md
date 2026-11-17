@@ -2,6 +2,19 @@
 
 All notable changes to tagged releases are documented here.
 
+## Unreleased
+
+- **`jpack emit conformance` no longer reads an index with an offset table** (ADR-0099). The
+  harness passed over the index's `IEOT` and `EOIE` extensions and read the entries in order, but
+  git with several index threads reads them in blocks at the offset table's offsets. A hand-made
+  index whose table disagrees with its entries was then read differently by git and by the
+  harness, which could leave out of the repository copy a link git tracks, with
+  `EMIT-LINK-OMITTED`. An index holding either extension is now not read, as an index git wrote
+  without its checksum is not, so every link that leads out of the repository is refused there
+  with `EMIT-HARNESS-BOUND`, as before v0.50.0. Git writes both only when `index.threads` is set
+  to other than 1, or `index.recordOffsetTable` or `index.recordEndOfIndexEntries` is on. The
+  conformance claim in CONFORMANCE.md is unchanged.
+
 ## 0.50.0 - 2026-11-17
 
 - **The registry line's support window** (VERSIONING.md, "The registry line"). Fixes land in the
