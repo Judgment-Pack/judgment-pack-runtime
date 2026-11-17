@@ -283,7 +283,10 @@ func within(root, path string) bool {
 }
 
 // RealRoot returns the absolute repository root with its symbolic links
-// resolved, the form RunOptions.Root and the host take.
+// resolved, the form RunOptions.Root and the host take. The resolved root
+// must itself read as a directory, not through a link: on Windows a junction
+// survives EvalSymlinks and reads as irregular (linkLike), and a walk from it
+// would never go below it, so owned files on disk would go unseen.
 func RealRoot(root string) (string, error) {
 	absolute, err := filepath.Abs(root)
 	if err != nil {
@@ -293,15 +296,24 @@ func RealRoot(root string) (string, error) {
 	if err != nil {
 		return "", err
 	}
-	info, err := os.Stat(real)
+	info, err := os.Lstat(real)
 	if err != nil {
 		return "", err
 	}
-	if !info.IsDir() {
-		return "", errors.New("emit: the repository root is not a directory")
+	if !rootIsDirectory(info.Mode()) {
+		return "", errors.New("emit: the repository root is not a directory, or is a link or junction to one")
 	}
 	return real, nil
 }
+
+// rootIsDirectory says whether a root's own mode, not followed, is a
+// directory's.
+func rootIsDirectory(mode fs.FileMode) bool { return mode.IsDir() && !linkLike(mode) }
+
+// linkLike says whether a mode is a symbolic link's, or irregular, as Go
+// reads a Windows junction and other reparse points: either may lead out of
+// the tree, so neither is walked through.
+func linkLike(mode fs.FileMode) bool { return mode&(fs.ModeSymlink|fs.ModeIrregular) != 0 }
 
 // capture keeps the first limit bytes written to it and counts the rest.
 // Past the limit it calls overflow once, when set.
