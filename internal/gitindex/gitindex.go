@@ -55,8 +55,9 @@ var (
 	// documentation.
 	ErrFormat = errors.New("gitindex: the index is not of a form this reader reads")
 	// ErrRelocated is a repository whose index or working tree git may take
-	// from elsewhere: GIT_INDEX_FILE, GIT_DIR or GIT_WORK_TREE is set, or
-	// .git/config sets core.worktree or includes another file, which could.
+	// from elsewhere: GIT_INDEX_FILE, GIT_DIR or GIT_WORK_TREE is set,
+	// .git/config mentions "worktree" or "include" anywhere (core.worktree,
+	// extensions.worktreeConfig, an include), or .git/config.worktree exists.
 	// Its .git/index may then not be the index git reads for root.
 	ErrRelocated = errors.New("gitindex: git may read another index or working tree for the root")
 )
@@ -118,6 +119,14 @@ func ReadWorkTree(root string, visit func(Entry)) error {
 	case relocates(config):
 		return ErrRelocated
 	}
+	// A per-worktree config (extensions.worktreeConfig) can set
+	// core.worktree too; one that is there at all is refused.
+	switch _, err := os.Lstat(filepath.Join(gitDir, "config.worktree")); {
+	case err == nil:
+		return ErrRelocated
+	case !errors.Is(err, fs.ErrNotExist):
+		return ErrUnreadable
+	}
 	data, err := readFile(filepath.Join(gitDir, "index"))
 	if errors.Is(err, errMissing) {
 		err = ErrUnreadable
@@ -134,41 +143,14 @@ func ReadWorkTree(root string, visit func(Entry)) error {
 var errMissing = errors.New("gitindex: no such file")
 
 // relocates says whether a git config file may set where the working tree
-// is: a core.worktree key, or an include or includeIf section, whose file
-// could set one. It reads the file plainly, line by line, and errs toward
-// yes: a section header is read up to its first space, quote or dot, case
-// aside, and a key is read on its own line or after a header's ']'. A line
-// that continues a value may be read as a key, which can only say yes more.
+// is, or name another file that could. It does not parse the file: git's
+// syntax allows several section headers on a line, includes, and keys git
+// may add, so any "worktree" (core.worktree, extensions.worktreeConfig) or
+// "include" (include, includeIf), in any case and anywhere, says yes. A
+// config that only mentions either somewhere else is refused too.
 func relocates(config []byte) bool {
-	section := ""
-	for _, line := range strings.Split(string(config), "\n") {
-		line = strings.TrimLeft(line, " \t\r")
-		if strings.HasPrefix(line, "[") {
-			end := strings.IndexByte(line, ']')
-			if end < 0 {
-				end = len(line) - 1
-			}
-			header := line[1 : end+1]
-			if cut := strings.IndexAny(header, " \t\".]"); cut >= 0 {
-				header = header[:cut]
-			}
-			section = strings.ToLower(header)
-			if section == "include" || section == "includeif" {
-				return true
-			}
-			line = strings.TrimLeft(line[end+1:], " \t")
-		}
-		key := line
-		if cut := strings.IndexFunc(key, func(r rune) bool {
-			return !(r == '-' || r >= '0' && r <= '9' || r >= 'A' && r <= 'Z' || r >= 'a' && r <= 'z')
-		}); cut >= 0 {
-			key = key[:cut]
-		}
-		if section == "core" && strings.EqualFold(key, "worktree") {
-			return true
-		}
-	}
-	return false
+	lower := bytes.ToLower(config)
+	return bytes.Contains(lower, []byte("worktree")) || bytes.Contains(lower, []byte("include"))
 }
 
 // readFile reads a regular file of at most maxBytes.

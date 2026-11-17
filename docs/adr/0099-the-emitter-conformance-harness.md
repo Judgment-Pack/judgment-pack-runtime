@@ -418,13 +418,16 @@ holds.
 - The index is not of a form the reader reads: another version, an entry or path that is
   malformed, a mode that is not a file, a link or a submodule, an extended flag it does not know,
   or entries out of git's order.
-- Git may read another index or working tree for `--root`: the environment holds
-  `GIT_INDEX_FILE`, `GIT_DIR` or `GIT_WORK_TREE`, or `.git/config` sets `core.worktree` or has an
-  `include` or `includeIf` section, whose file could set it (amended 2026-11-17, #468). Before,
-  such a repository was read as its `.git/index` gave it, which may omit a tracked link: a stale
-  `.git/index` beside the index git really reads could lack a path git tracks. The config is read
-  plainly, line by line, case aside, and each reading errs toward refusing. A config that is not
-  a regular file or cannot be read is refused too; one that is missing is read as empty.
+- Git may read another index or working tree for `--root`: the environment holds `GIT_INDEX_FILE`,
+  `GIT_DIR` or `GIT_WORK_TREE`, `.git/config` holds `worktree` or `include` anywhere, in any case,
+  or `.git/config.worktree` exists (amended 2026-11-17, #468). Before, such a repository was read
+  as its `.git/index` gave it, which may omit a tracked link: a stale `.git/index` beside the index
+  git really reads could lack a path git tracks. The config is not parsed: git allows several
+  section headers on one line, so `[x] [core] worktree = d` sets `core.worktree`, and any mention
+  of either word, `core.worktree`, `extensions.worktreeConfig`, `include` and `includeIf` among
+  them, is refused, whatever it means. A config that is not a regular file or cannot be read is
+  refused too, and one that is missing is read as empty; a `config.worktree` that cannot be checked
+  is refused.
 - The index holds an extension whose signature does not begin with `A` to `Z`. Git requires a
   reader to understand such an extension, and the reader understands none. Two change the set of
   paths the entries give: a split index (`link`), whose entries are in another file, and a sparse

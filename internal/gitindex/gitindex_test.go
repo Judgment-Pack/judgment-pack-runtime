@@ -311,9 +311,8 @@ func TestReadWorkTreeRefusesARelocatedIndex(t *testing.T) {
 	}
 	for _, config := range []string{
 		"",
-		"[core]\n\trepositoryformatversion = 0\n\tbare = false\n",
-		"[core]\n\tworktreeish = x\n[remote \"worktree\"]\n\tworktree = x\n",
-		"; [core] worktree = x\n[user]\n\tworktree = x\n",
+		"[core]\n\trepositoryformatversion = 0\n\tfilemode = true\n\tbare = false\n\tlogallrefupdates = true\n",
+		"[remote \"origin\"]\n\turl = https://example.invalid/r.git\n\tfetch = +refs/heads/*:refs/remotes/origin/*\n",
 	} {
 		if err := read(config); err != nil {
 			t.Errorf("%q: %v", config, err)
@@ -326,9 +325,34 @@ func TestReadWorkTreeRefusesARelocatedIndex(t *testing.T) {
 		"[core]\r\n\tbare = false\r\n\tworktree\r\n",
 		"[include]\n\tpath = other.config\n",
 		"[includeIf \"gitdir:~/x/\"]\n\tpath = other.config\n",
+		// Several section headers on one line: git reads the last.
+		"[foo] [core] worktree = /x\n",
+		"[x][include]path=inc\n",
+		"[extensions]\n\tworktreeConfig = true\n",
+		// Any mention is refused, whatever it means.
+		"[user]\n\tname = WorkTree\n",
+		"; include\n",
 	} {
 		if err := read(config); !errors.Is(err, ErrRelocated) {
 			t.Errorf("%q: %v", config, err)
+		}
+	}
+	// A per-worktree config is refused while it is there at all, whatever
+	// it holds; one that cannot be checked is refused as unreadable.
+	perWorktree := t.TempDir()
+	gitindextest.Write(t, perWorktree, "a")
+	if err := os.WriteFile(filepath.Join(perWorktree, ".git", "config.worktree"), []byte("[core]\n\tbare = false\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := ReadWorkTree(perWorktree, func(Entry) {}); !errors.Is(err, ErrRelocated) {
+		t.Errorf("config.worktree present: %v", err)
+	}
+	if err := os.Remove(filepath.Join(perWorktree, ".git", "config.worktree")); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Symlink("elsewhere", filepath.Join(perWorktree, ".git", "config.worktree")); err == nil {
+		if err := ReadWorkTree(perWorktree, func(Entry) {}); !errors.Is(err, ErrRelocated) {
+			t.Errorf("config.worktree a dangling link: %v", err)
 		}
 	}
 	dirConfig := t.TempDir()

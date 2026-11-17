@@ -359,4 +359,13 @@ leaves exit code 1, which an emitter may also give by itself, so an interrupt th
 time may report `EMIT-INTERRUPTED` for an emitter that was already failing with exit code 1, where
 `EMIT-PROCESS` would be its code without the interrupt.
 Of several environments' runs, none starts after the interrupt, and the refusal is reported once.
+An emitter that leaves its process group (`setsid`) before the kill makes the group kill fail
+(`ESRCH`); the kill then does not count as sent, and the run is `EMIT-PROCESS`, not
+`EMIT-INTERRUPTED`, still a failure, as before.
 `EMIT-INTERRUPTED` is provisional, like the host's other codes (VERSIONING.md).
+
+Before the first emitter starts, `jpack` marks every descriptor above standard error close-on-exec;
+where `/dev/fd` cannot be listed in full, or lists nothing above 2, it marks every number from 3
+below the hard `RLIMIT_NOFILE` limit, at most 65536. Known limit: a descriptor above that top is
+missed, one opened before the hard limit was lowered below it, or one above 65536 where the hard
+limit is higher (unlimited on macOS).

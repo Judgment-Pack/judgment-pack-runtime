@@ -78,8 +78,10 @@ func waitProcessGroup(process *os.Process, bound time.Duration) {
 // holds a descriptor above 2 where the listing is complete), every number
 // from 3 below the hard descriptor limit (at most maxInheritedScan) is
 // marked as well: a descriptor opened before the soft limit was lowered can
-// sit above it, never above the hard one. Marking a number that is not open
-// does nothing.
+// sit above it. Known limit: a descriptor above the scan's top is missed,
+// one opened before the hard limit was lowered below it, or one above
+// maxInheritedScan where the hard limit is higher (RLIM_INFINITY on macOS).
+// Marking a number that is not open does nothing.
 func closeInherited() {
 	entries, err := os.ReadDir(inheritedDir)
 	above := false

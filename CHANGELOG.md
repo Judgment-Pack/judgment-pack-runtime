@@ -32,7 +32,9 @@ All notable changes to tagged releases are documented here.
   nothing above 2, as on a system without a full descriptor file system, it now also marks every
   number from 3 below the descriptor limit (at most 65536), as it already did where the listing
   could not be read. Both scans now go up to the hard limit, not the soft one, which a descriptor
-  opened before the soft limit was lowered can sit above. No release target is affected. The
+  opened before the soft limit was lowered can sit above. A descriptor above the scan's top is
+  still missed: one opened before the hard limit was lowered below it, or one above 65536 where the
+  hard limit is higher, as on macOS, where it can be unlimited. No release target is affected. The
   conformance claim in CONFORMANCE.md is unchanged.
 - **The mutation table's check is stricter.** `scripts/check-mutation-table.py` now also fails
   when a row's mutant is not `every A becomes B` with `A` the row's own code (quoted, or a
@@ -55,13 +57,13 @@ All notable changes to tagged releases are documented here.
   refusing. The harness reads `--root/.git/index` itself, versions 2 to 4, and never runs git.
   Every other link that leads out is refused as before, and so is every such link when `--root` has
   no `.git` directory (a linked worktree's `.git` file included), or git may read another index or
-  working tree for it (`GIT_INDEX_FILE`, `GIT_DIR` or `GIT_WORK_TREE` is set, or `.git/config` sets
-  `core.worktree` or includes a file), or the index cannot be read, fails its checksum, is past 64
-  MiB or 1 048 576 entries, or holds a version, entry or required extension the reader does not
-  read (a split or sparse index among them) or a path twice at one stage. A write the emitter makes
-  at a left-out link's path is a stray write of the copy. The listing names at most 100 links; past
-  them, one more diagnostic gives the count of the rest in its message. The conformance claim in
-  CONFORMANCE.md is unchanged.
+  working tree for it (`GIT_INDEX_FILE`, `GIT_DIR` or `GIT_WORK_TREE` is set, or `.git/config`
+  mentions `worktree` or `include` anywhere, or `.git/config.worktree` exists), or the index cannot
+  be read, fails its checksum, is past 64 MiB or 1 048 576 entries, or holds a version, entry or
+  required extension the reader does not read (a split or sparse index among them) or a path twice
+  at one stage. A write the emitter makes at a left-out link's path is a stray write of the copy.
+  The listing names at most 100 links; past them, one more diagnostic gives the count of the rest
+  in its message. The conformance claim in CONFORMANCE.md is unchanged.
 
 ## 0.49.0 - 2026-11-17
 
