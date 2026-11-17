@@ -64,6 +64,35 @@ All notable changes to tagged releases are documented here.
   at one stage. A write the emitter makes at a left-out link's path is a stray write of the copy.
   The listing names at most 100 links; past them, one more diagnostic gives the count of the rest
   in its message. The conformance claim in CONFORMANCE.md is unchanged.
+- **Reading and canonicalizing a document costs less, with the same bytes** (#464, #468). The
+  shared JSON decoder reads a document that is valid JSON straight from its bytes, and builds a
+  refusal's location only when it reports one; a document that is not valid JSON is read through
+  the standard decoder as before. Object members are ordered by UTF-16 code units in place, and a
+  bounded canonical form is built in one pass when its longest reading fits the bound. Measured
+  at 1 MiB: decoding allocates 2.3 to 3.8 times less (an array of small numbers 50.7 times its
+  size, not 126.7; an object of members 11.8, not 26.7) and takes 3.6 to 6.1 times less time;
+  admitting a MiB of `1e20`s allocates 29 times its size, not 59; encoding an object of 62335
+  members allocates 7.0 times its form, not 38.6, in a quarter of the time; a bounded form of
+  200000 subnormal numbers takes as long as an unbounded one, not twice as long. Every decoded
+  value, canonical form, digest, diagnostic code, location and message is unchanged: the old
+  decoder and member order are kept in the tests and compared with the new over every JSON
+  document in the repository, random and damaged documents, and a fuzz target. The tests'
+  allocation budgets are tightened to match. The conformance claim in CONFORMANCE.md is unchanged.
+- **The walk of a vector's `expected/` is bounded by what it has read** (#464, ADR-0099). Every
+  entry of a record holds a file, and every directory lies at most 255 deep above one, so a
+  directory is listed only while its entries, the entries still to walk and the entries walked that
+  are not directories (links included) are at most one past the 10000-file bound, and the
+  directories walked are at most 255 for each file read and 256 more. A tree of empty directories
+  is refused after the directories of one path rather than at about 2.55 million entries (3280 of
+  them, 3 to each, after 257 listings: 17.8 ms to 1.4 ms; 30000 at the root after one listing: 205
+  ms to 2.3 ms). A record within the bounds is read as before, and the `~empty` marker works as
+  before. Three refusals move: a listing more than one past the file bound is now `EMIT-VECTOR` at
+  `expected/`, its listing unread, where v0.49.0 refused it at the path of file 10001; `--update`
+  now refuses, rather than replaces, an `expected/` of more than 256 directories that holds no
+  file; and because empty directories count toward the listing bound, a record of 9999 or 10000
+  files that also holds empty directories, or one that lists about 257 empty directories before its
+  first file, is now `EMIT-VECTOR` at `expected/`, where v0.49.0 read it. The conformance claim in
+  CONFORMANCE.md is unchanged.
 
 ## 0.49.0 - 2026-11-17
 
