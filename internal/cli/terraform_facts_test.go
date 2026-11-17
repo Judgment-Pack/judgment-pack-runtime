@@ -10,6 +10,7 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/Judgment-Pack/judgment-pack-runtime/internal/carrier"
 	"github.com/Judgment-Pack/judgment-pack-runtime/internal/jcs"
@@ -347,9 +348,67 @@ func TestTerraformFactsHoldsMaxAndMaxBytes(t *testing.T) {
 	}
 	code, out, stderr = runTest(t, append(base, "--max-bytes", fmt.Sprint(len(data)-1)), "")
 	tfRefused(t, code, out, stderr, data, terraformfile.CodeSize)
-	// From standard input, too.
-	code, out, stderr = runTest(t, []string{"terraform", "facts", "--plan", "-", "--type", "synthetic_sql_user", "--max-bytes", fmt.Sprint(len(data) - 1)}, string(data))
-	tfRefused(t, code, out, stderr, data, terraformfile.CodeSize)
+	// From standard input, too: a stream of exactly --max-bytes is read
+	// whole, and one byte more refuses it with its code and message alone.
+	stdin := []string{"terraform", "facts", "--plan", "-", "--type", "synthetic_sql_user", "--max-bytes"}
+	code, out, _ = runTest(t, append(stdin, size), string(data))
+	if code != 0 || len(tfLines(t, out)) != 3 {
+		t.Fatalf("standard input at --max-bytes: %d %q", code, out)
+	}
+	code, out, stderr = runTest(t, append(stdin, fmt.Sprint(len(data)-1)), string(data))
+	tfStreamRefused(t, code, out, stderr)
+}
+
+// tfStreamRefused holds a run to a refused standard input longer than
+// --max-bytes: exit 2, no line, and TF-SIZE with no sha256 or bytes member.
+func tfStreamRefused(t *testing.T, code int, out, stderr string) {
+	t.Helper()
+	if code != 2 || out != "" {
+		t.Fatalf("exit %d, stdout %q, want 2 and nothing", code, out)
+	}
+	var members map[string]any
+	if err := json.Unmarshal([]byte(stderr), &members); err != nil {
+		t.Fatalf("stderr %q: %v", stderr, err)
+	}
+	_, hasDigest := members["sha256"]
+	_, hasBytes := members["bytes"]
+	if len(members) != 2 || members["code"] != terraformfile.CodeSize || hasDigest || hasBytes || !strings.Contains(members["message"].(string), "Standard input") || !strings.HasSuffix(stderr, "}\n") {
+		t.Fatalf("stderr %q", stderr)
+	}
+}
+
+// tfEndless is a standard input that never ends.
+type tfEndless struct{}
+
+func (tfEndless) Read(p []byte) (int, error) {
+	for i := range p {
+		p[i] = ' '
+	}
+	return len(p), nil
+}
+
+func TestTerraformFactsRefusesAnEndlessStandardInput(t *testing.T) {
+	for _, args := range [][]string{
+		{"terraform", "facts", "--plan", "-", "--type", "synthetic_sql_user", "--max-bytes", "4096"},
+		{"terraform", "facts", "--state", "-", "--type", "synthetic_sql_user"},
+	} {
+		type run struct {
+			code        int
+			out, stderr string
+		}
+		done := make(chan run, 1)
+		go func() {
+			var stdout, stderr bytes.Buffer
+			code := Run(args, tfEndless{}, &stdout, &stderr)
+			done <- run{code, stdout.String(), stderr.String()}
+		}()
+		select {
+		case got := <-done:
+			tfStreamRefused(t, got.code, got.out, got.stderr)
+		case <-time.After(5 * time.Second):
+			t.Fatalf("%v has not returned within 5 s", args)
+		}
+	}
 }
 
 func TestTerraformFactsRefusesAnUnusableCommandLine(t *testing.T) {
@@ -555,5 +614,44 @@ func TestTerraformFactsHoldsTheBatchIDLimit(t *testing.T) {
 	}
 	if strings.Contains(stderr, "kkkk") || strings.Contains(stderr, "synthetic_sql_user") {
 		t.Fatalf("the diagnostic carries the address: %q", stderr)
+	}
+}
+
+// failAfterFirstWrite takes its first write and fails every one after it.
+type failAfterFirstWrite struct{ bytes.Buffer }
+
+func (w *failAfterFirstWrite) Write(p []byte) (int, error) {
+	if w.Len() > 0 {
+		return 0, os.ErrClosed
+	}
+	return w.Buffer.Write(p)
+}
+
+// TestTerraformFactsWriteFailurePartwayLeavesEarlierOutput holds the help
+// text's account of a write that fails partway: it is an error (exit 4), not
+// a refusal, and what was written before it stays written, so a pipeline
+// must check the exit code before it uses the batch.
+func TestTerraformFactsWriteFailurePartwayLeavesEarlierOutput(t *testing.T) {
+	var resources []tfResource
+	for i := range 200 {
+		name := fmt.Sprintf("u%03d", i)
+		resources = append(resources, tfResource{address: "synthetic_sql_user." + name, typ: "synthetic_sql_user", name: name, values: map[string]any{"role": "reader"}})
+	}
+	data := tfState(t, tfModule("", resources))
+	src := terraformfile.Source{Document: terraformfile.DocumentState, MaxBytes: terraformfile.DefaultMaxBytes, Select: terraformfile.Select{Types: []string{"synthetic_sql_user"}, Max: terraformfile.DefaultSelectMax}}
+	acquisition, refusal, err := terraformfile.Read(bytes.NewReader(data), src)
+	if err != nil || refusal != nil {
+		t.Fatalf("%v %v", refusal, err)
+	}
+	var whole bytes.Buffer
+	if err := writeTerraformFacts(&whole, acquisition); err != nil {
+		t.Fatal(err)
+	}
+	out := &failAfterFirstWrite{}
+	if err := writeTerraformFacts(out, acquisition); err == nil {
+		t.Fatal("a failed write was not reported")
+	}
+	if out.Len() == 0 || out.Len() >= whole.Len() || !bytes.HasPrefix(whole.Bytes(), out.Bytes()) {
+		t.Fatalf("wrote %d of %d bytes before the failure", out.Len(), whole.Len())
 	}
 }

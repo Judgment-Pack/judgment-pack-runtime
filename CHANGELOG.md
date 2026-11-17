@@ -138,6 +138,63 @@ All notable changes to tagged releases are documented here.
   vectors were written again with `--update`. A request is at most 64 MiB of RFC 8785 bytes, and
   the host refuses a larger one, any request of `"each"` or the one of `"all"`, with `EMIT-REQUEST`
   before any emitter starts. The conformance claim in CONFORMANCE.md is unchanged.
+- **Review follow-ups before the release** (the LOW findings of the reviews of this release's
+  changes).
+  - The Terraform reader orders member names without decoding the bytes two names share. A state
+    of many long keys with a common prefix sorted at about 150 ns a byte; the order is unchanged.
+  - `jpack emit` refuses the device names `CONIN$` and `CONOUT$`, and `COM` and `LPT` followed by
+    a superscript `¹`, `²` or `³`, in a response path or an owns glob, as it refuses `CON` and
+    `COM1`: these are the names `filepath.IsLocal` refuses on Windows.
+  - An emitter diagnostic's location that names an entry must be in document `value` (registry
+    companion §7.3). Before, `{"document":"registry"}` with an entry was resolved into the entry's
+    value.
+  - A symbolic link that both the walk of the owned paths and the check of a response path meet
+    is reported once, not twice.
+  - The emitter's `HOME` is removed even when the emitter took the owner's bits from a directory
+    in it.
+  - `jpack terraform facts --help` and ADR-0097 no longer say that nothing is written unless every
+    line can be. That holds for a refusal. A write that fails partway exits 4 and may leave the
+    lines before it, so the example now runs `evaluate` only after `&&`.
+  - The start-up module's `ReadFile` opens a file without blocking on Unix, so a named pipe put in
+    the file's place between its first check and the open is refused rather than waited on. Its
+    exported API is unchanged.
+  - `jpack terraform facts` reads standard input (`-`) only to one byte past `--max-bytes`. Before,
+    it hashed the whole stream to its end before refusing it, so a stream that never ends never
+    returned. A longer standard input is still `TF-SIZE`, exit 2, but its refusal is
+    `{"code","message"}` alone: neither `sha256` nor `bytes`, since the stream's whole length is
+    not read, and a fixed message that says the input was standard input (ADR-0097 reading 18). A
+    file's `TF-SIZE` is unchanged, with the whole file's sha256 and size.
+  - `jpack emit conformance` refuses a Windows reparse point in `--root` that is neither a
+    symbolic link nor a regular file, a junction for one, with `EMIT-HARNESS-BOUND` naming it,
+    before any emitter runs. Go reads a junction as irregular, not as a link, so the link check
+    could not follow it, and where the system refuses links the emitter ran in the repository
+    with a junction out of it while check 6 skipped.
+  - `jpack emit conformance` checks again, as it reads a vector, that the vector directory and
+    every directory between it and the file are directories and not links. A directory swapped
+    for a link after the layout was read through; it is now `EMIT-PATH-UNREADABLE` at the file.
+    `--update` likewise refuses to write through a vector directory swapped for a link.
+  - Check 6 of `jpack emit conformance` compares the copy's root too: a change to its permission
+    bits is a stray write at `.`. The copy's 256 MiB bound counts the bytes copied rather than the
+    sizes read before the copy, so a file that grows while it is copied cannot pass it.
+  - When the repository copy cannot be made again after a vector's stray writes, `jpack emit
+    conformance` keeps that vector's failing check 6 row in the report. The run still stops, not
+    run, with exit 2; before, the row was dropped.
+  - `jpack emit conformance --update` writes a vector's new `expected/` whole in a temporary
+    directory beside it and renames it into place, so a write that fails partway leaves
+    `expected/` as it was. Before, it removed `expected/` first and could leave it partial. When
+    the new one cannot be renamed in and the old one cannot be put back, the temporary directory
+    holding the old one is kept and named in the error.
+  - `jpack emit conformance` lists the vectors directory and each vector's `kinds/` by batches
+    and stops once past the bound (1000 vectors, 1024 kind files), rather than listing either
+    whole before the bound was checked. The bounds and their codes are unchanged.
+  - On Windows, check 2 of `jpack emit conformance` also sets `USERPROFILE`, `APPDATA` and
+    `LOCALAPPDATA` to each determinism run's `HOME`, unless the manifest's `env` names one, since
+    a program there finds its home by them and not by `HOME`. Go ignores `TZ` on Windows, which
+    ADR-0099 now lists as a known limit.
+  - `jpack-emit-go-facts` refuses a request of 10 000 contracts or more before reading them, and a
+    file's source over 16 MiB, or sources over 64 MiB in all, before formatting them. Before, the
+    bounds were held only after formatting, and a 59 MB request reached about 5.8 GB.
+  - The conformance claim in CONFORMANCE.md is unchanged.
 - **A TypeScript constants emitter: `cmd/jpack-emit-ts-constants`** (ADR-0103, proposed). This is
   the reference emitter of spec RFC 0036 §6 item 2, run under the emitter contract with
   `"input": "resolved"` and `"environments": "each"`. Its manifest is

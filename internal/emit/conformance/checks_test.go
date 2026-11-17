@@ -1,6 +1,7 @@
 package conformance
 
 import (
+	"maps"
 	"slices"
 	"strings"
 	"testing"
@@ -271,5 +272,20 @@ func TestGivenRequestEnvelope(t *testing.T) {
 				t.Fatalf("refused: %+v", refused)
 			}
 		})
+	}
+}
+
+// Check 2 on Windows moves the variables a program finds its home by there
+// with HOME, except one the manifest's env names, which is held; elsewhere
+// it changes only HOME, TZ, LANG and SOURCE_DATE_EPOCH.
+func TestDeterminismOverrideOnWindows(t *testing.T) {
+	base := map[string]string{"HOME": "h", "TZ": "z", "LANG": "l", "SOURCE_DATE_EPOCH": "1"}
+	if got := determinismOverride("linux", nil, "h", "z", "l", "1"); !maps.Equal(got, base) {
+		t.Fatalf("linux: %v", got)
+	}
+	want := maps.Clone(base)
+	want["USERPROFILE"], want["LOCALAPPDATA"] = "h", "h"
+	if got := determinismOverride("windows", []string{"APPDATA"}, "h", "z", "l", "1"); !maps.Equal(got, want) {
+		t.Fatalf("windows: %v", got)
 	}
 }
