@@ -35,8 +35,8 @@ type diskFile struct {
 
 // scanOwned lists the regular files on disk that the globs own, walking only
 // where a glob can match and never through a symbolic link. It passes over
-// anything named ".git", in any case: git's directory, or the file that
-// stands for it in a worktree or submodule, is never owned. A link that a
+// anything a file system reads as ".git" (isGitName): git's directory, or the
+// file that stands for it in a worktree or submodule, is never owned. A link that a
 // glob matches, or below which one can, refuses the run (EMIT-LINK), and so
 // does an owned path that is neither a regular file nor a directory, or a
 // directory that cannot be listed (EMIT-PATH-UNREADABLE).

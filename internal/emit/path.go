@@ -26,9 +26,9 @@ var errPath = errors.New("emit: the path is outside the path rules")
 //   - a reserved device name (CON, PRN, AUX, NUL, COM1-9, LPT1-9), in any
 //     case and with or without an extension ("nul.txt").
 //
-// And it refuses a segment ".git" in any case, so that no owns glob names
-// git's directory and no response writes into it; scanOwned does not enter
-// it either.
+// And it refuses a segment that a file system reads as ".git" (isGitName),
+// so that no owns glob names git's directory and no response writes into
+// it; scanOwned does not enter it either.
 func checkPathForm(path string) error {
 	if path == "" || len(path) > MaxPathBytes || !utf8.ValidString(path) {
 		return errPath
@@ -67,9 +67,107 @@ func isDeviceName(segment string) bool {
 	return false
 }
 
-// isGitName says whether a name is git's directory, ".git", in any case: a
-// case-insensitive file system reads ".GIT" as the same name.
-func isGitName(name string) bool { return strings.EqualFold(name, ".git") }
+// isGitName says whether a path segment, or a name found on disk, is one a
+// file system reads as git's directory, ".git". It makes git's own two checks
+// (git's path.c is_ntfs_dotgit and utf8.c is_hfs_dotgit), which git applies
+// to every path it checks out when core.protectNTFS and core.protectHFS are
+// set, so that a name git refuses to check out is never owned here either.
+func isGitName(name string) bool { return isNTFSDotGit(name) || isHFSDotGit(name) }
+
+// isNTFSDotGit is git's is_ntfs_dotgit: ".git", or its 8.3 short name
+// "git~1", in ASCII case, followed only by dots and spaces (which NTFS drops)
+// up to the end of the name, a separator, or a ":" that begins a stream name
+// (".git::$INDEX_ALLOCATION" is the directory itself).
+func isNTFSDotGit(name string) bool {
+	var rest string
+	switch {
+	case len(name) >= 4 && name[0] == '.' && asciiEqualFold(name[1:4], "git"):
+		rest = name[4:]
+	case len(name) >= 5 && asciiEqualFold(name[:3], "git") && name[3:5] == "~1":
+		rest = name[5:]
+	default:
+		return false
+	}
+	for i := 0; i < len(rest); i++ {
+		switch rest[i] {
+		case '/', '\\', ':':
+			return true
+		case '.', ' ':
+		default:
+			return false
+		}
+	}
+	return true
+}
+
+// isHFSDotGit is git's is_hfs_dotgit: ".git" in ASCII case once the code
+// points HFS+ ignores in a name are skipped (git's utf8.c next_hfs_char,
+// after Apple's TN1150), so ".g\u200cit" is ".git" there. As in git,
+// malformed UTF-8 ends the name.
+func isHFSDotGit(name string) bool {
+	r, i := nextHFSChar(name, 0)
+	if r != '.' {
+		return false
+	}
+	for _, want := range "git" {
+		r, i = nextHFSChar(name, i)
+		if r > 127 || asciiLower(r) != want {
+			return false
+		}
+	}
+	r, _ = nextHFSChar(name, i)
+	return r == 0 || r == '/'
+}
+
+// nextHFSChar returns the code point of name at byte i, skipping those HFS+
+// ignores, and the byte after it; at the end of name, or at malformed UTF-8,
+// it returns 0.
+func nextHFSChar(name string, i int) (rune, int) {
+	for i < len(name) {
+		r, size := utf8.DecodeRuneInString(name[i:])
+		if r == utf8.RuneError && size == 1 {
+			return 0, len(name)
+		}
+		i += size
+		if !hfsIgnorable(r) {
+			return r, i
+		}
+	}
+	return 0, i
+}
+
+// hfsIgnorable is the list git's next_hfs_char skips.
+func hfsIgnorable(r rune) bool {
+	switch {
+	case r >= 0x200c && r <= 0x200f, // zero width non-joiner and joiner, left-to-right and right-to-left marks
+		r >= 0x202a && r <= 0x202e, // directional embeddings and overrides
+		r >= 0x206a && r <= 0x206f, // symmetric swapping, Arabic form shaping, digit shapes
+		r == 0xfeff:                // zero width no-break space
+		return true
+	}
+	return false
+}
+
+func asciiLower(r rune) rune {
+	if r >= 'A' && r <= 'Z' {
+		return r + 'a' - 'A'
+	}
+	return r
+}
+
+// asciiEqualFold compares two strings in ASCII case only, as git's
+// strncasecmp does.
+func asciiEqualFold(a, b string) bool {
+	if len(a) != len(b) {
+		return false
+	}
+	for i := 0; i < len(a); i++ {
+		if asciiLower(rune(a[i])) != asciiLower(rune(b[i])) {
+			return false
+		}
+	}
+	return true
+}
 
 // foldKey is the key two paths collide under: Unicode canonical caseless
 // matching (The Unicode Standard §3.13, D145), NFD(fold(NFD(path))). The RFC

@@ -250,6 +250,9 @@ func TestEmitRefusesAPathThatIsADirectoryOfAnother(t *testing.T) {
 func TestEmitNeverOwnsGitsDirectory(t *testing.T) {
 	gitFiles := map[string]string{
 		"gen/.git/HEAD": "ref: refs/heads/main\n", "gen/sub/.GIT/config": "[core]\n", "gen/module/.git": "gitdir: ../.git/modules/m\n",
+		// What NTFS and HFS+ read as .git: the 8.3 short name, and .git
+		// with a code point HFS+ ignores.
+		"gen/short/GIT~1/config": "[core]\n", "gen/hfs/.g\u200cit/HEAD": "ref: refs/heads/main\n",
 	}
 	for _, check := range []bool{false, true} {
 		root := testRepo(t)
