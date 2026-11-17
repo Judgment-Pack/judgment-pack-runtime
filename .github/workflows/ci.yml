@@ -3,13 +3,18 @@ name: CI
 # The check list is dev.json, run by scripts/dev/check.sh (the development kit's vendored runner).
 # `check` sets the toolchains up from the manifest and runs the steps: on a pull request the steps
 # jpdev.json maps the changed paths to (`check.sh --changed`), on a push to main the whole list.
-# `test` is the operating system and Go version matrix: its job names are required by branch
-# protection, and its legs run the Go steps of dev.json natively on each platform.
+# `test` is the operating system and Go version matrix: its legs run the Go steps of dev.json
+# natively on each platform. The macOS leg runs on a push to main, on the nightly schedule and when
+# the release workflow calls this one before it drafts a release, not on a pull request; the other
+# legs' job names are required by branch protection.
 
 on:
   pull_request:
   push:
     branches: [main]
+  schedule:
+    - cron: "41 5 * * *"
+  workflow_call:
 
 permissions:
   contents: read
@@ -20,17 +25,17 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
+        os: [ubuntu-latest, macos-latest, windows-latest]
+        go: [stable]
         include:
-          - os: ubuntu-latest
-            go: stable
           - os: ubuntu-latest
             # The floor in go.mod. os.Root, which internal/fssecure binds every
             # project read to, is a Go 1.24 standard-library type.
             go: 1.24.x
-          - os: macos-latest
-            go: stable
-          - os: windows-latest
-            go: stable
+        # macOS runners are the slowest to start: a pull request (or a merge queue entry) runs
+        # without that leg. An exclude that matches nothing removes nothing.
+        exclude:
+          - os: ${{ (github.event_name == 'pull_request' || github.event_name == 'merge_group') && 'macos-latest' || 'none' }}
     runs-on: ${{ matrix.os }}
     steps:
       - name: Check out source
@@ -78,6 +83,8 @@ jobs:
 
   check:
     name: check
+    # The nightly run is for the test matrix's macOS leg; main's pushes already run the whole list.
+    if: github.event_name != 'schedule'
     runs-on: ubuntu-latest
     timeout-minutes: 60
     steps:
