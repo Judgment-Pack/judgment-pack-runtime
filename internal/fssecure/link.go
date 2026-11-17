@@ -5,7 +5,7 @@ import (
 	"runtime"
 )
 
-// linkLike reports whether a final component, read without following links
+// LinkLike reports whether a final component, read without following links
 // (Lstat), may lead elsewhere, so that the checks here refuse it as a link:
 //
 //   - a symbolic link, on every platform;
@@ -18,7 +18,7 @@ import (
 //
 // No final component these checks accept is a directory, so refusing
 // directory reparse points loses nothing a caller could have opened.
-func linkLike(info fs.FileInfo) bool {
+func LinkLike(info fs.FileInfo) bool {
 	mode := info.Mode()
 	if mode&fs.ModeSymlink != 0 {
 		return true
@@ -29,5 +29,5 @@ func linkLike(info fs.FileInfo) bool {
 	return linkGOOS != "windows" || mode.IsDir() || directoryAttribute(info)
 }
 
-// linkGOOS is the platform linkLike answers for; a test sets it.
+// linkGOOS is the platform LinkLike answers for; a test sets it.
 var linkGOOS = runtime.GOOS
