@@ -69,7 +69,9 @@ It also holds exactly one of these expectations:
 Anything else in a vector is `EMIT-VECTOR`: an unknown member, a link, or a vector past a bound.
 Every vector is read before any emitter runs, so a bad layout refuses the run whole. A directory
 that holds no vector, empty or holding only files, is `EMIT-VECTOR` too: the hostile rows alone
-would otherwise pass a run that never ran the emitter.
+would otherwise pass a run that never ran the emitter. For the same reason, a set whose every
+vector is refused before the emitter runs, so that no request reaches it, is `EMIT-VECTOR` and
+exit 2.
 
 The two inputs are formed differently:
 

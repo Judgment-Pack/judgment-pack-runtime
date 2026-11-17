@@ -438,6 +438,25 @@ func TestVectorLayoutRefusals(t *testing.T) {
 	}
 }
 
+// A set whose every vector is refused before the emitter runs is refused:
+// its rows, and the hostile rows, would otherwise pass a run that never ran
+// the emitter. The manifest's command does not exist.
+func TestNoVectorRanTheEmitter(t *testing.T) {
+	f := newFixture(t)
+	m := f.manifest(nil, map[string]any{"command": []any{"bin/jpack-harness-test-absent"}})
+	f.registryVector("refused", map[string]string{"expected-failure.json": `{"code":"EMIT-OPTIONS"}`, "options.json": `{"unknown":true}`})
+	for _, update := range []bool{false, true} {
+		report := f.run(m, update)
+		if report.Outcome != OutcomeNotRun || report.Exit() != ExitNotRun {
+			t.Fatalf("update %v: %s", update, dump(report))
+		}
+		last := report.Diagnostics[len(report.Diagnostics)-1]
+		if last.Code != "EMIT-VECTOR" || last.Location.Document != DocumentVector || last.Location.Path != "" {
+			t.Fatalf("update %v: %+v", update, report.Diagnostics)
+		}
+	}
+}
+
 func TestVectorLinkRefused(t *testing.T) {
 	if runtime.GOOS == "windows" {
 		t.Skip("making a symbolic link needs a privilege on Windows")

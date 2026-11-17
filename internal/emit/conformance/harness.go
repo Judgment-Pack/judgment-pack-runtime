@@ -79,6 +79,8 @@ type harness struct {
 	ws     *workspace
 	report *Report
 	keep   func(kind string) bool
+	// ran says whether any request reached emit.Run.
+	ran bool
 }
 
 // vectorRun is what one vector's request and run 1 gave.
@@ -134,6 +136,11 @@ func Run(ctx context.Context, m *emit.Manifest, vectorsDir string, opts Options)
 		if failure := h.vector(v, checks); failure != nil {
 			return report.Refuse(*failure)
 		}
+	}
+	if !h.ran {
+		// Every vector was refused before the emitter ran: as with no vector
+		// at all, the rows would pass a run that never ran the emitter.
+		return report.Refuse(vectorDiagnostic("EMIT-VECTOR", "", ""))
 	}
 	if slices.Contains(checks, checkPathSafety) {
 		report.Rows = append(report.Rows, hostileRows()...)
@@ -205,6 +212,7 @@ func (h *harness) form(v *Vector) *vectorRun {
 // overrides of its environment (check 2's), and keeps the host's
 // EMIT-ENV-UNSET warnings for the report, once each.
 func (h *harness) execute(request emit.Request, override map[string]string) emit.RunResult {
+	h.ran = true
 	result := emit.Run(h.ctx, h.m, request.Version, request.Bytes, emit.RunOptions{
 		Root: h.ws.root, Timeout: h.opts.Timeout, Environ: h.opts.Environ, Override: override,
 	})
