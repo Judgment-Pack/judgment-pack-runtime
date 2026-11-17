@@ -51,13 +51,18 @@ type RunResult struct {
 	// EmitterDiagnostics are those of the response, when it could be read.
 	EmitterDiagnostics []EmitterDiagnostic
 	// Diagnostics are the host's: EMIT-ENV-UNSET warnings, and EMIT-PROCESS
-	// or EMIT-RESPONSE when the run failed.
+	// or EMIT-RESPONSE when the run failed, or EMIT-INTERRUPTED when ctx was
+	// cancelled (jpack was interrupted) before the emitter finished.
 	Diagnostics []Diagnostic
 	// Started says whether the emitter's process was started. A run that
 	// fails before it (command[0] not found, no HOME) is EMIT-PROCESS too;
 	// the conformance harness counts only started runs as the emitter's.
 	Started bool
 }
+
+// afterWait is called once the emitter and its group have ended, before the
+// run's outcome is decided; a test replaces it to interrupt the run there.
+var afterWait = func() {}
 
 // waitDelay bounds how long a run waits, once the emitter has exited or been
 // killed, for standard output and standard error to close.
@@ -204,7 +209,20 @@ func Run(ctx context.Context, m *Manifest, requestVersion string, request []byte
 	cmd.WaitDelay = waitDelay
 	ownProcessGroup(cmd)
 	markInherited()
-	cmd.Cancel = func() error { return killProcessGroup(cmd.Process) }
+	// interruptKill records what ended the emitter, when the run's context
+	// did: the kill reached the group while ctx itself was done, so jpack
+	// was interrupted, not the time limit or the output bound reached. It is
+	// set when the kill is sent, so ctx done later, once the emitter has
+	// ended, does not change why it ended. exec calls Cancel at most once,
+	// and Wait returns only after it has.
+	interruptKill := false
+	cmd.Cancel = func() error {
+		err := killProcessGroup(cmd.Process)
+		if err == nil && ctx.Err() != nil {
+			interruptKill = true
+		}
+		return err
+	}
 	if err = cmd.Start(); err == nil {
 		result.Started = true
 		err = cmd.Wait()
@@ -217,15 +235,29 @@ func Run(ctx context.Context, m *Manifest, requestVersion string, request []byte
 	// HOME is removed (deferred above) only once the group is gone, or the
 	// wait is over, so that nothing of the group writes into it afterwards.
 	waitProcessGroup(cmd.Process, groupWait)
+	afterWait()
 	result.StderrBytes = stderr.total
 	if opts.Stderr != nil {
 		_, _ = opts.Stderr.Write(stderr.kept())
 	}
+	// What ended the emitter decides, not whether ctx is done by now: an
+	// interrupt that comes once the emitter has ended changes nothing.
+	exitedZero := cmd.ProcessState != nil && cmd.ProcessState.Success()
 	switch {
 	case stdout.overflowed():
 		result.Diagnostics = append(result.Diagnostics, diagnostic("EMIT-RESPONSE", Location{Document: DocumentResponse}))
 		return result
-	case err != nil || runCtx.Err() != nil:
+	case exitedZero && (err == nil || interruptKill):
+		// The emitter exited 0 by itself; an interrupt that came after
+		// reached only what it left in its group. Its response is read.
+	case interruptKill || !result.Started && ctx.Err() != nil && errors.Is(err, ctx.Err()):
+		// jpack was interrupted, and ended the emitter, or never started
+		// it.
+		result.Diagnostics = append(result.Diagnostics, diagnostic("EMIT-INTERRUPTED", Location{Document: DocumentManifest, Pointer: "/command"}))
+		return result
+	case err != nil:
+		// The emitter failed to start, exited non-zero, or was killed at
+		// its time limit (err is then the deadline).
 		return processFailure(Location{Document: DocumentManifest, Pointer: "/command"})
 	}
 	data := stdout.kept()

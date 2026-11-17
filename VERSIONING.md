@@ -195,9 +195,10 @@ release notes.
 - Its report, `emitReportVersion` `"1.0.0"`. This format is this runtime's own.
 
 The registry companion names `EMIT-REQUEST-VERSION`, `EMIT-KIND-RANGE`, `EMIT-REQUEST`,
-`EMIT-PROCESS`, `EMIT-RESPONSE` and `EMIT-DEPRECATED`. Ten more codes are this runtime's and
+`EMIT-PROCESS`, `EMIT-RESPONSE` and `EMIT-DEPRECATED`. Eleven more codes are this runtime's and
 provisional in the same way: `EMIT-MANIFEST`, `EMIT-OWNS-OVERLAP`, `EMIT-KIND-ID`, `EMIT-OPTIONS`,
-`EMIT-LINK`, `EMIT-PATH-UNREADABLE`, `EMIT-WRITE`, and the warnings `EMIT-ENV-UNSET`,
+`EMIT-LINK`, `EMIT-PATH-UNREADABLE`, `EMIT-WRITE`, `EMIT-INTERRUPTED` (an interrupt or SIGTERM
+that stopped `jpack emit` or `jpack emit conformance`), and the warnings `EMIT-ENV-UNSET`,
 `EMIT-REPORT-TRUNCATED` and `EMIT-STAGING-LEFTOVER` (a staging file an earlier run left, unowned, in
 a directory the host writes to). They are provisional until the companion's first host rows give
 these refusals codes. The bounds are the companion's: a response of 64 MiB, 10 000 files, 16 MiB per
@@ -209,11 +210,12 @@ RFC 0036's, and reads the harness level of `vectors/harness.json`; it applies le
 level it does not know refuses the run. It reports the companion's `EMIT-STRAY-WRITE`. Three more
 codes are this runtime's and provisional in the same way: `EMIT-VECTOR` (the vector layout),
 `EMIT-HARNESS-BOUND` (a check that could not be completed: a harness bound, or a determinism
-run's fresh `HOME` that could not be made), and the warning `EMIT-LINK-OMITTED` (a link that leads
-out of the repository and that git does not track, left out of the copy). Its own
-bounds, a repository copy of 256 MiB and 100 000 entries, a git index of 64 MiB and 1 048 576
-entries, and a references scan of 1 MiB of strings and 2^32 steps a vector, are this runtime's; a
-tighter bound would be a breaking change.
+run's fresh `HOME` that could not be made; an interrupt is `EMIT-INTERRUPTED`, no longer
+`EMIT-HARNESS-BOUND`), and the warning `EMIT-LINK-OMITTED` (a link that leads out of the
+repository and that git does not track, left out of the copy). Its own bounds, a repository copy
+of 256 MiB and 100 000 entries, a git index of 64 MiB and 1 048 576 entries, and a references scan
+of 1 MiB of strings and 2^32 steps a vector, are this runtime's; a tighter bound would be a
+breaking change.
 
 ## Go API
 
