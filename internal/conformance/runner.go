@@ -533,7 +533,7 @@ func expectedFindingsPresent(expected []result.ExpectedDiagnostic, actual []resu
 
 func resolveSuiteRoot(argument string) (string, string, error) {
 	info, err := os.Lstat(argument)
-	if err != nil || info.Mode()&os.ModeSymlink != 0 {
+	if err != nil || fssecure.LinkLike(info) {
 		return "", "", errors.New("unsafe suite path")
 	}
 	if info.IsDir() {
@@ -583,8 +583,8 @@ func resolveFixture(root, logicalPath string) (string, error) {
 	for _, part := range strings.Split(logicalPath, "/") {
 		current = filepath.Join(current, part)
 		info, err := os.Lstat(current)
-		if err != nil || info.Mode()&os.ModeSymlink != 0 {
-			return "", errors.New("fixture path contains a symlink or missing component")
+		if err != nil || fssecure.LinkLike(info) {
+			return "", errors.New("fixture path contains a symlink, junction or missing component")
 		}
 	}
 	rootAbs, err := filepath.Abs(root)

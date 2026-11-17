@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"errors"
+	"fmt"
 	"io"
 	"io/fs"
 	"os"
@@ -67,10 +68,25 @@ var waitDelay = 2 * time.Second
 // removed.
 var groupWait = 2 * time.Second
 
+// hostGOOS is the operating system the emitter runs on; a test sets it to
+// form a Windows environment elsewhere.
+var hostGOOS = runtime.GOOS
+
+// windowsHomes are the variables a program on Windows finds its home and its
+// application data by, where HOME is not read: Go's os.UserHomeDir reads
+// USERPROFILE, os.UserConfigDir APPDATA and os.UserCacheDir LOCALAPPDATA.
+// windowsTemps are those it finds its temporary directory by (os.TempDir).
+var (
+	windowsHomes = []string{"USERPROFILE", "APPDATA", "LOCALAPPDATA"}
+	windowsTemps = []string{"TEMP", "TMP"}
+)
+
 // Run runs one emitter on one request and validates its response: the run
 // step of `jpack emit`, which the conformance harness reuses. The emitter
 // gets an environment of only PATH (its absolute directories), HOME (a fresh empty directory, removed
-// afterwards), LANG=C.UTF-8 and the manifest's env names that are set; the
+// afterwards), LANG=C.UTF-8, on Windows USERPROFILE, APPDATA and LOCALAPPDATA
+// (HOME) and TEMP and TMP (a directory in HOME), and the manifest's env
+// names that are set, which win over those; the
 // repository root as its working directory; and the request on standard
 // input. It runs in a process group of its own, which is killed when the time
 // limit passes or standard output passes MaxResponseBytes, and once the
@@ -111,6 +127,22 @@ func Run(ctx context.Context, m *Manifest, requestVersion string, request []byte
 
 	env := map[string]string{"HOME": home, "LANG": "C.UTF-8"}
 	order := []string{"PATH", "HOME", "LANG"}
+	if hostGOOS == "windows" {
+		// Windows programs find their home, application data and temporary
+		// directory by these names, not HOME: each is the fresh HOME (TEMP
+		// and TMP a directory in it), so nothing of the host's is passed.
+		if err := os.Mkdir(filepath.Join(home, "tmp"), 0o700); err != nil {
+			return processFailure(Location{Document: DocumentManifest, Pointer: "/command"})
+		}
+		for _, name := range windowsHomes {
+			env[name] = home
+			order = append(order, name)
+		}
+		for _, name := range windowsTemps {
+			env[name] = filepath.Join(home, "tmp")
+			order = append(order, name)
+		}
+	}
 	if path, ok := lookup("PATH"); ok {
 		// Only absolute directories, as command[0] is looked up: an empty or
 		// relative entry would have the emitter's own lookups search the
@@ -129,8 +161,12 @@ func Run(ctx context.Context, m *Manifest, requestVersion string, request []byte
 			result.Diagnostics = append(result.Diagnostics, diagnostic("EMIT-ENV-UNSET", Location{Document: DocumentManifest, Pointer: "/env/" + strconv.Itoa(i), Variable: name}))
 			continue
 		}
+		// A name the manifest lists (upper case, as the manifest admits
+		// them) wins over one the host set, as one setting.
+		if _, set := env[name]; !set {
+			order = append(order, name)
+		}
 		env[name] = value
-		order = append(order, name)
 	}
 	overrides := make([]string, 0, len(opts.Override))
 	for name := range opts.Override {
@@ -167,6 +203,7 @@ func Run(ctx context.Context, m *Manifest, requestVersion string, request []byte
 	cmd.Stderr = stderr
 	cmd.WaitDelay = waitDelay
 	ownProcessGroup(cmd)
+	markInherited()
 	cmd.Cancel = func() error { return killProcessGroup(cmd.Process) }
 	if err = cmd.Start(); err == nil {
 		result.Started = true
@@ -294,17 +331,67 @@ func RealRoot(root string) (string, error) {
 	}
 	real, err := filepath.EvalSymlinks(absolute)
 	if err != nil {
+		// On Windows a junction among the ancestors can fail EvalSymlinks
+		// itself (Go reads it as irregular, not a directory): the refusal
+		// then names the junction, not the resolution's error.
+		if dir, found := reparseAncestor(absolute); found {
+			return "", fmt.Errorf("%w: %s", ErrRootReparse, dir)
+		}
 		return "", err
 	}
-	info, err := os.Lstat(real)
+	info, err := rootLstat(real)
 	if err != nil {
 		return "", err
 	}
 	if !rootIsDirectory(info.Mode()) {
-		return "", errors.New("emit: the repository root is not a directory, or is a link or junction to one")
+		return "", errors.New("emit: the repository root is not a directory, or is a junction or other reparse point")
+	}
+	// EvalSymlinks resolves symbolic links but leaves a Windows junction or
+	// other reparse point among the root's ancestors, through which the
+	// host's walk and writes would fail partway. Such a root is refused, not
+	// resolved.
+	for dir := real; filepath.Dir(dir) != dir; {
+		dir = filepath.Dir(dir)
+		info, err := rootLstat(dir)
+		if err != nil {
+			return "", err
+		}
+		if linkLike(info.Mode()) {
+			return "", fmt.Errorf("%w: %s", ErrRootReparse, dir)
+		}
 	}
 	return real, nil
 }
+
+// reparseAncestor finds, from the volume root down, the first ancestor of the
+// absolute path that is a junction or another reparse point (irregular). A
+// symbolic link is not one: EvalSymlinks follows it, so it is not why the
+// resolution failed (macOS's /var is such a link). It stops at the first
+// ancestor it cannot read.
+func reparseAncestor(absolute string) (string, bool) {
+	var ancestors []string
+	for dir := absolute; filepath.Dir(dir) != dir; {
+		dir = filepath.Dir(dir)
+		ancestors = append(ancestors, dir)
+	}
+	for i := len(ancestors) - 1; i >= 0; i-- {
+		info, err := rootLstat(ancestors[i])
+		if err != nil {
+			return "", false
+		}
+		if info.Mode()&fs.ModeIrregular != 0 {
+			return ancestors[i], true
+		}
+	}
+	return "", false
+}
+
+// ErrRootReparse is RealRoot's refusal of a root whose path passes through a
+// junction or other reparse point.
+var ErrRootReparse = errors.New("emit: the repository root's path passes through a junction or other reparse point")
+
+// rootLstat is os.Lstat; a test replaces it.
+var rootLstat = os.Lstat
 
 // rootIsDirectory says whether a root's own mode, not followed, is a
 // directory's.
