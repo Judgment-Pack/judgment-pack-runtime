@@ -331,6 +331,13 @@ func startsWith(raw json.RawMessage, delimiter byte) bool {
 // matters here: encoding/json keeps the last of two members with one name,
 // and another reader may keep the first, so the two would read different
 // selectors or environments from the same bytes.
+//
+// encoding/json decodes a lone surrogate escape ("\ud800") to U+FFFD, in a
+// member name and in a value. Two names that differ only in their lone
+// surrogates are then one name, which refuses the document as a duplicate,
+// and a lone surrogate in a value is read as U+FFFD. Neither is checked
+// further: RFC 8259 §8.2 leaves such a string's meaning open, and no
+// conforming producer writes one.
 func scan(data []byte) error {
 	if !utf8.Valid(data) {
 		return fmt.Errorf("%w: the document is not UTF-8", ErrDocument)

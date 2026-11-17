@@ -47,10 +47,12 @@ func (a *App) terraformFactsCommand() *cobra.Command {
 			"Every value marked sensitive is removed, with its member, before anything is selected, and a resource without its sensitivity mirror refuses the file. Numbers are decimal strings in one normal form. " +
 			"--type selects resources of these types (at most 64, repeat it or separate with commas), --mode managed (the default) or data resources, --address resources whose whole address matches the pattern, where * matches any run of characters other than '.', '[' and ']', " +
 			"and --actions, with --plan only, changes whose actions include one of create, update, delete, read and no-op. More selected resources than --max (1 to 10000, default 1000) refuse the file, as does a file longer than --max-bytes (1 to 268435456, default 67108864). " +
-			"Nothing is written unless every line can be: a refused file, a resource whose address is longer than the batch id limit of evaluate --batch (FACTS-ID-LIMIT), or a resource whose facts document exceeds the facts-document limit registry facts uses (FACTS-DOCUMENT-LIMIT), writes its code, the file's sha256 and size, and a fixed message to standard error, never anything read from the file, and exits 2. " +
+			"A refusal writes no line: a refused file, a resource whose address is longer than the batch id limit of evaluate --batch (FACTS-ID-LIMIT), or a resource whose facts document exceeds the facts-document limit registry facts uses (FACTS-DOCUMENT-LIMIT), writes its code, the file's sha256 and size, and a fixed message to standard error, never anything read from the file, and exits 2. " +
+			"Standard input is read only to one byte past --max-bytes, so a longer one is refused TF-SIZE with its code and a fixed message alone: its sha256 and size are not known. " +
+			"A batch whose writing fails partway exits 4 and may leave the lines before the failure, the last perhaps cut short, on standard output, so use the batch only after an exit 0. " +
 			"Exit 0 when the batch was written (an empty one included), 2 when the file was refused, 3 for an unusable command line, and 4 when the file could not be read or the batch written.",
-		Example: "jpack terraform facts --plan plan.json --type google_sql_user --actions delete,update > changes.jsonl\n" +
-			"jpack experimental evaluate --pack-id sql-user-change --batch changes.jsonl --format json --require-outcome allowed",
+		Example: "jpack terraform facts --plan plan.json --type google_sql_user --actions delete,update > changes.jsonl &&\n" +
+			"  jpack experimental evaluate --pack-id sql-user-change --batch changes.jsonl --format json --require-outcome allowed",
 		Args: cobra.NoArgs,
 		RunE: func(command *cobra.Command, _ []string) error {
 			const name = "terraform facts"
@@ -182,11 +184,12 @@ func terraformSelect(src *terraformfile.Source, addressSet bool, address, mode s
 
 // readTerraformFile reads the file through the reader, which holds it to the
 // source's maxBytes as it reads and never keeps more. Standard input is read
-// for "-".
+// for "-", as a stream: the reader stops one byte past maxBytes, since a
+// stream need not end.
 func (a *App) readTerraformFile(path string, src terraformfile.Source) (*terraformfile.Acquisition, *terraformfile.Refusal, error) {
 	what := "Terraform " + src.Document
 	if path == "-" {
-		return terraformfile.Read(a.in, src)
+		return terraformfile.ReadStream(a.in, src)
 	}
 	file, err := a.openInput(path, what)
 	if err != nil {

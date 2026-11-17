@@ -2,7 +2,16 @@
 
 package startup
 
-import "io/fs"
+import (
+	"io/fs"
+	"syscall"
+)
+
+// openNoWait is the flag ReadFile opens a file with. A named pipe put at the
+// path after the check and before the open would make a plain open wait for
+// a writer; opened without blocking, it is found on the opened file and
+// refused. A regular file reads the same either way.
+const openNoWait = syscall.O_NONBLOCK
 
 // checkPermissions refuses a file that others may read: the permission bits
 // of a Unix file are the ones the kernel checks.

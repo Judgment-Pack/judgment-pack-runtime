@@ -217,3 +217,14 @@ func onDisk(t *testing.T, root, path string) (string, os.FileMode, bool) {
 	}
 	return string(data), info.Mode().Perm(), true
 }
+
+// countOf counts the items of list equal to item.
+func countOf(list []string, item string) int {
+	n := 0
+	for _, s := range list {
+		if s == item {
+			n++
+		}
+	}
+	return n
+}

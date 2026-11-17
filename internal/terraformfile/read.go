@@ -85,20 +85,32 @@ type resource struct {
 // §2 to §5. Exactly one result is non-nil: the acquisition, the refusal of the
 // first step that failed, or an error. The error is ErrInvalidSource for a
 // source that fails Validate, which makes the dialect invalid and not the file,
-// or ErrRead when the reader fails.
+// or ErrRead when the reader fails. A file longer than maxBytes is read to its
+// end, so that TF-SIZE carries the whole file's sha256 and size.
 func Read(r io.Reader, src Source) (*Acquisition, *Refusal, error) {
-	return read(r, src, MaxValueBytes, ValueBytesPerInputByte)
+	return read(r, src, false, MaxValueBytes, ValueBytesPerInputByte)
+}
+
+// ReadStream is Read for a stream, such as standard input, that need not end.
+// The caller says the input is a stream; the reader never guesses it from r's
+// type. It reads at most maxBytes and one byte more. A longer stream is TF-SIZE
+// with neither sha256 nor size, since its whole length is never read (a
+// Refusal with Stream set). Every other result is Read's.
+func ReadStream(r io.Reader, src Source) (*Acquisition, *Refusal, error) {
+	return read(r, src, true, MaxValueBytes, ValueBytesPerInputByte)
 }
 
 // read holds the acquired value to valueLimit bytes and to perInputByte times
-// the input's size, whichever is less.
-func read(r io.Reader, src Source, valueLimit, perInputByte int64) (*Acquisition, *Refusal, error) {
+// the input's size, whichever is less. A stream is read to limit+1 bytes at
+// most.
+func read(r io.Reader, src Source, stream bool, valueLimit, perInputByte int64) (*Acquisition, *Refusal, error) {
 	if err := src.Validate(); err != nil {
 		return nil, nil, err
 	}
 	limit := src.maxBytes()
-	// Step 1: the size and sha256 of the whole input.
-	data, digest, size, err := readAll(r, limit)
+	// Step 1: the size and sha256 of the whole input, or, for a stream, of
+	// its first limit+1 bytes.
+	data, digest, size, err := readAll(r, limit, stream)
 	if err != nil {
 		return nil, nil, err
 	}
@@ -106,6 +118,9 @@ func read(r io.Reader, src Source, valueLimit, perInputByte int64) (*Acquisition
 		return nil, newRefusal(code, digest, size), nil
 	}
 	if size > limit {
+		if stream {
+			return nil, newStreamSizeRefusal(), nil
+		}
 		return refuse(CodeSize)
 	}
 	// Step 2: strict JSON.
@@ -194,11 +209,13 @@ func (e readError) Error() string   { return ErrRead.Error() }
 func (e readError) Unwrap() []error { return []error{ErrRead, e.err} }
 
 // readAll reads the whole input, hashing all of it, and keeps it only while
-// it is at most limit bytes. A reader that tells its size (a file, or an
-// in-memory reader) is read into one buffer of that size and one byte more, to
-// see a longer input. Any other is read in chunks that grow to 8 MiB and are
-// joined once, so it costs about twice its size while it is read.
-func readAll(r io.Reader, limit int64) ([]byte, string, int64, error) {
+// it is at most limit bytes. A stream is read to limit+1 bytes at most, enough
+// to see that it is longer, and its digest is then of those bytes only. A
+// reader that tells its size (a file, or an in-memory reader) is read into one
+// buffer of that size and one byte more, to see a longer input. Any other is
+// read in chunks that grow to 8 MiB and are joined once, so it costs about
+// twice its size while it is read.
+func readAll(r io.Reader, limit int64, stream bool) ([]byte, string, int64, error) {
 	hash := sha256.New()
 	var chunks [][]byte
 	var spill []byte
@@ -206,6 +223,9 @@ func readAll(r io.Reader, limit int64) ([]byte, string, int64, error) {
 	chunk := 64 << 10
 	if hint := sizeHint(r); hint >= 0 && hint <= limit {
 		chunk = int(hint) + 1
+	}
+	if stream {
+		r = io.LimitReader(r, limit+1)
 	}
 	for {
 		var buffer []byte

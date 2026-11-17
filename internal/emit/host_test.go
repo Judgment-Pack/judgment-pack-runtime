@@ -227,7 +227,9 @@ func TestEmitRefusesALinkAtOrAboveAnOwnedPath(t *testing.T) {
 				}
 				symlink(t, c.target, filepath.Join(root, filepath.FromSlash(c.link)))
 				report := echoHost(t, root, responseJSON(t, map[string]any{"path": c.write, "text": "new\n"}), check, nil)
-				if report.Exit() != ExitNotDone || !slices.Contains(codes(report.Diagnostics), "EMIT-LINK@"+c.link) {
+				// Once: the walk of the owned paths and the check of each
+				// response path can both meet the link.
+				if report.Exit() != ExitNotDone || countOf(codes(report.Diagnostics), "EMIT-LINK@"+c.link) != 1 {
 					t.Fatalf("report: %s", reportJSON(t, report))
 				}
 				if got, _, _ := onDisk(t, root, "outside/a"); got != "kept\n" {

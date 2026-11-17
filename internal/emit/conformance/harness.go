@@ -6,6 +6,7 @@ import (
 	"os"
 	"path/filepath"
 	"reflect"
+	"runtime"
 	"slices"
 	"strconv"
 	"strings"
@@ -181,6 +182,12 @@ func (h *harness) vector(v *Vector, checks []int) *emit.Diagnostic {
 			row, failure = h.strayWrites(run, row)
 		}
 		if failure != nil {
+			// A row its check completed before the harness stopped, check
+			// 6's stray writes when the copy cannot be made again, stays in
+			// the report, as the earlier rows do.
+			if row.Status != "" {
+				h.report.Rows = append(h.report.Rows, row)
+			}
 			return failure
 		}
 		h.report.Rows = append(h.report.Rows, row)
@@ -383,7 +390,7 @@ func (h *harness) determinism(run *vectorRun, row Row) (Row, *emit.Diagnostic) {
 			removeTree(base)
 			return fault()
 		}
-		override := map[string]string{"HOME": home, "TZ": d.tz, "LANG": d.lang, "SOURCE_DATE_EPOCH": d.epoch}
+		override := determinismOverride(runtime.GOOS, h.m.Env, home, d.tz, d.lang, d.epoch)
 		for i, request := range run.requests {
 			if !sameOutcome(run.results[i], h.execute(request, override)) {
 				differing[d.run] = true
@@ -402,6 +409,28 @@ func (h *harness) determinism(run *vectorRun, row Row) (Row, *emit.Diagnostic) {
 		}
 	}
 	return row, nil
+}
+
+// windowsHomes are the variables a program on Windows finds its home and
+// its application data by, where HOME is not read: Go's os.UserHomeDir reads
+// USERPROFILE, os.UserConfigDir APPDATA and os.UserCacheDir LOCALAPPDATA.
+var windowsHomes = []string{"USERPROFILE", "APPDATA", "LOCALAPPDATA"}
+
+// determinismOverride is the environment a determinism run changes: HOME,
+// TZ, LANG and SOURCE_DATE_EPOCH, and on Windows each of windowsHomes moved
+// to the run's HOME too, unless the manifest's env names it, which is held
+// as the host gives it. Run 1 sets none of windowsHomes, as it sets no TZ.
+func determinismOverride(goos string, env []string, home, tz, lang, epoch string) map[string]string {
+	override := map[string]string{"HOME": home, "TZ": tz, "LANG": lang, "SOURCE_DATE_EPOCH": epoch}
+	if goos != "windows" {
+		return override
+	}
+	for _, name := range windowsHomes {
+		if !slices.ContainsFunc(env, func(listed string) bool { return strings.EqualFold(listed, name) }) {
+			override[name] = home
+		}
+	}
+	return override
 }
 
 // makeTemp makes the base directory of a determinism run's HOME; a test
@@ -525,13 +554,11 @@ func (h *harness) strayWrites(run *vectorRun, row Row) (Row, *emit.Diagnostic) {
 		return row, nil
 	}
 	changes, failure := h.ws.strayWrites()
-	if failure != nil {
-		return row, failure
-	}
-	if len(changes) > 0 {
+	switch {
+	case len(changes) > 0:
 		row.Status, row.Reason, row.StrayWrites = StatusFail, reasonStray, changes
-		return row, nil
+	case failure == nil:
+		row.Status = StatusPass
 	}
-	row.Status = StatusPass
-	return row, nil
+	return row, failure
 }
