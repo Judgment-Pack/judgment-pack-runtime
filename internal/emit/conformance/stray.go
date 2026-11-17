@@ -46,6 +46,41 @@ func (e linkOutError) Error() string {
 	return "conformance: a symbolic link leads out of the repository"
 }
 
+// reparseError names a Windows reparse point of the repository that is not a
+// symbolic link, a junction for one, which the link check cannot follow.
+type reparseError struct{ path string }
+
+func (e reparseError) Error() string {
+	return "conformance: a reparse point that is not a symbolic link"
+}
+
+// refusesReparse is check 6's rule for a Windows reparse point, by the
+// entry's mode and whether it carries FILE_ATTRIBUTE_REPARSE_POINT: one that
+// Go reads as neither a symbolic link nor a regular file is refused. A
+// junction is one: since Go 1.23 it is ModeIrregular, not ModeSymlink, so
+// the link check would never see where it leads. A symbolic link is left to
+// the link check, and a regular file stays, as Go reads a deduplicated file,
+// which is a reparse point too. Outside Windows no entry is a reparse point,
+// and none is ModeIrregular.
+func refusesReparse(mode fs.FileMode, reparse bool) bool {
+	if mode&fs.ModeSymlink != 0 || mode.IsRegular() {
+		return false
+	}
+	return reparse || mode&fs.ModeIrregular != 0
+}
+
+// checkReparse refuses an entry by refusesReparse (reparseError).
+func checkReparse(name string, entry fs.DirEntry) error {
+	reparse, err := reparsePoint(entry)
+	if err != nil {
+		return unreadableError{path: name}
+	}
+	if refusesReparse(entry.Type(), reparse) {
+		return reparseError{path: name}
+	}
+	return nil
+}
+
 // maxLinkHops bounds the links followed to find where one link leads.
 const maxLinkHops = 40
 
@@ -97,7 +132,8 @@ func newWorkspace(source string) (*workspace, *emit.Diagnostic) {
 }
 
 // checkLinks walks source as copyTree does, under its entry bound, and
-// refuses the first symbolic link that leads out of it (linkOutError).
+// refuses the first symbolic link that leads out of it (linkOutError), or
+// the first reparse point that is not a link (reparseError).
 func checkLinks(source string) error {
 	entries := 0
 	return filepath.WalkDir(source, func(full string, entry fs.DirEntry, err error) error {
@@ -121,6 +157,9 @@ func checkLinks(source string) error {
 		if entries++; entries > maxCopyEntries {
 			return errCopyBound
 		}
+		if err := checkReparse(name, entry); err != nil {
+			return err
+		}
 		if entry.Type()&fs.ModeSymlink == 0 {
 			return nil
 		}
@@ -140,12 +179,15 @@ func checkLinks(source string) error {
 func copyFailure(err error) *emit.Diagnostic {
 	var unreadable unreadableError
 	var linkOut linkOutError
+	var reparse reparseError
 	var d emit.Diagnostic
 	switch {
 	case err == nil, errors.Is(err, errCopyLink):
 		return nil
 	case errors.As(err, &linkOut):
 		d = emit.NewDiagnostic("EMIT-HARNESS-BOUND", emit.Location{Document: emit.DocumentRepository, Path: linkOut.path})
+	case errors.As(err, &reparse):
+		d = emit.NewDiagnostic("EMIT-HARNESS-BOUND", emit.Location{Document: emit.DocumentRepository, Path: reparse.path})
 	case errors.Is(err, errCopyBound):
 		d = emit.NewDiagnostic("EMIT-HARNESS-BOUND", emit.Location{Document: emit.DocumentRepository})
 	case errors.As(err, &unreadable):
@@ -243,6 +285,9 @@ func copyTree(source, target string) (map[string]entryState, error) {
 		}
 		if len(states) >= maxCopyEntries {
 			return errCopyBound
+		}
+		if err := checkReparse(name, entry); err != nil {
+			return err
 		}
 		info, err := entry.Info()
 		if err != nil {

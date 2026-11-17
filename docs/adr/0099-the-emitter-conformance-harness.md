@@ -212,7 +212,15 @@ led, and a part that does not exist is taken as written. A link that cannot be f
 links is treated as leading out. The run is refused, rather than check 6 skipped for that link,
 because skipping would still run the emitter with a way out of the copy: a write through the link
 would land in the real directory, possibly the repository itself, while the run passed. The
-author removes the link from the working tree, or makes it relative and inside `--root`. The copy is bounded at 256 MiB of file bytes
+author removes the link from the working tree, or makes it relative and inside `--root`. On
+Windows, a reparse point that Go reads as neither a symbolic link nor a regular file, a junction
+for one, is `EMIT-HARNESS-BOUND` naming it, and exit 2, before any emitter runs, by the same walk
+and whether or not the copy falls back. Since Go 1.23 a junction is `ModeIrregular`, not
+`ModeSymlink`, so the link check cannot see where it leads, and under the fallback the emitter
+would run in the repository with a way out of it while check 6 skipped. Reporting check 6 as not
+run there instead was weighed and not chosen: the refusal fails closed, and it holds whether or
+not the copy can be made. A regular file stays, as Go reads a deduplicated file, which is a
+reparse point too. The copy is bounded at 256 MiB of file bytes
 and 100 000 entries (`MaxCopyBytes`, `MaxCopyEntries`). Past either, the result is
 `EMIT-HARNESS-BOUND` and exit 2. Every link of `--root` is checked to stay in it before the copy is
 made, so a link that leads out is refused whether or not the copy can be made. Only Windows refusing
