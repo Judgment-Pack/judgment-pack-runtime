@@ -63,6 +63,10 @@
       "checks": ["emitter-conformance"]
     },
     {
+      "paths": ["internal/emit/**"],
+      "checks": ["emit-coverage"]
+    },
+    {
       "paths": ["internal/registry/**", "internal/emit/conformance/**", "internal/terraformfile/**", "internal/jcs/**",
                 "cmd/jpack-emit-go-facts/**", "cmd/jpack-emit-go-loader/**", "cmd/jpack-emit-ts-constants/**"],
       "checks": ["coverage-floors"]

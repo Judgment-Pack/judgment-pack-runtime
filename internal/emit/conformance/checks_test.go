@@ -317,3 +317,24 @@ func TestDeterminismOverrideOnWindows(t *testing.T) {
 		t.Fatalf("windows: %v", got)
 	}
 }
+
+// A given request is held to the bound in its canonical form, the bytes the
+// emitter reads, which can be longer than the file: 1e20 is written as 21
+// digits.
+func TestGivenRequestIsBoundedAsCanonical(t *testing.T) {
+	f := newFixture(t)
+	m := f.manifest(requestMode, map[string]any{"environments": "all"})
+	const envelope = `"emitRequestVersion":"1.0.0","emitter":{"id":"https://example.invalid/emitters/test","version":"1.0.0"},"options":{}`
+	short := `{"declarations":[{"n":100}],` + envelope + `,"resolved":[]}`
+	long := `{"declarations":[{"n":1e20}],` + envelope + `,"resolved":[]}`
+	saved := maxGivenRequestBytes
+	defer func() { maxGivenRequestBytes = saved }()
+	maxGivenRequestBytes = len(long) + 5
+	if _, refused := givenRequest([]byte(short), m); len(refused) != 0 {
+		t.Fatalf("a request within the bound in both forms: %+v", refused)
+	}
+	request, refused := givenRequest([]byte(long), m)
+	if len(refused) != 1 || refused[0].Code != "EMIT-REQUEST" || refused[0].Location.Document != emit.DocumentRequest {
+		t.Fatalf("a request within the bound as written, over it canonical: %+v, %d bytes", refused, len(request.Bytes))
+	}
+}

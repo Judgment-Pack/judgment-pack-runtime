@@ -28,10 +28,13 @@ var (
 	// ErrLimit: a value or a document is over its bound.
 	ErrLimit = errors.New("startup: over the bound")
 	// ErrNotRegular: the path does not lead to a regular file.
-	ErrNotRegular = errors.New("startup: the secret file is not a regular file")
+	ErrNotRegular = errors.New("startup: the file is not a regular file")
 	// ErrWorldReadable: users other than the file's owner and group may read
 	// the file.
 	ErrWorldReadable = errors.New("startup: the secret file is world-readable")
+	// ErrWorldWritable: users other than the file's owner and group may
+	// write the file, and so replace the secret. No FileRules accepts it.
+	ErrWorldWritable = errors.New("startup: the secret file is world-writable")
 	// ErrPermissionsUnknown: on this operating system the permission bits Go
 	// reports do not say who may read a file, so no file is read.
 	ErrPermissionsUnknown = errors.New("startup: this operating system's file permissions cannot be checked, so secret files are refused")
@@ -113,8 +116,9 @@ func ReadEnv(name string) (Secret, error) {
 
 // ReadFile reads a secret from the file at path, following symbolic links as
 // a mounted secret volume uses them. It refuses a path that does not lead to a
-// regular file ([ErrNotRegular]) and a file whose permission bits let others
-// read it ([ErrWorldReadable]), and checks both again on the opened file, so
+// regular file ([ErrNotRegular]), a file whose permission bits let others
+// read it ([ErrWorldReadable]) and one they let others write
+// ([ErrWorldWritable]), and checks them again on the opened file, so
 // the bytes read are those of the file checked. Where the operating system's
 // permission bits do not describe who may read a file, it refuses every file
 // ([ErrPermissionsUnknown]). Then it applies [ReadEnv]'s rules: exactly one
@@ -126,7 +130,7 @@ func ReadFile(path string) (Secret, error) {
 
 // ReadFileWith is [ReadFile] under rules: with rules.AllowOtherRead, a file
 // others may read is accepted rather than refused [ErrWorldReadable]. Every
-// other check stands, and a file whose permission bits cannot be checked is
+// other check stands, a file others may write among them ([ErrWorldWritable]), and a file whose permission bits cannot be checked is
 // still refused [ErrPermissionsUnknown].
 func ReadFileWith(path string, rules FileRules) (Secret, error) {
 	info, err := os.Stat(path)

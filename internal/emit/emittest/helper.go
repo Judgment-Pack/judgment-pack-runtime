@@ -18,6 +18,7 @@ import (
 	"slices"
 	"strconv"
 	"strings"
+	"testing"
 	"time"
 )
 
@@ -63,6 +64,8 @@ func Link(dir, name string) error {
 //	                   holding the request as text
 //	env FILE           answer FILE holding the environment, one VAR=value a line, sorted
 //	cwd FILE           answer FILE holding the working directory
+//	sigign FILE        answer FILE holding the SigIgn line of /proc/self/status
+//	                   (Linux only): the signals it started with ignored
 //	exit N             exit N with nothing written
 //	stderr N           write N bytes to standard error, then an empty response
 //	flood              write to standard output without end
@@ -90,6 +93,7 @@ func Link(dir, name string) error {
 //	                   it, relative to the working directory, then answer with
 //	                   no files
 func Main(args []string) int {
+	defer quietCoverage()
 	if len(args) == 0 {
 		return 64
 	}
@@ -149,6 +153,19 @@ func Main(args []string) int {
 	case "cwd":
 		dir, _ := os.Getwd()
 		return answer(map[string]any{"path": args[1], "text": dir + "\n"})
+	case "sigign":
+		// Linux only: the SigIgn line of /proc/self/status, the signals
+		// this process started with ignored.
+		status, err := os.ReadFile("/proc/self/status")
+		if err != nil {
+			return 70
+		}
+		for _, line := range strings.Split(string(status), "\n") {
+			if strings.HasPrefix(line, "SigIgn:") {
+				return answer(map[string]any{"path": args[1], "text": line + "\n"})
+			}
+		}
+		return 70
 	case "exit":
 		code, _ := strconv.Atoi(args[1])
 		return code
@@ -272,4 +289,28 @@ func firstReference(request string) string {
 		return ""
 	}
 	return rest[:end]
+}
+
+// quietCoverage keeps a test binary built with -cover from writing to
+// standard error at exit. Run as the emitter, the binary never reaches the
+// end of its tests, so the coverage runtime's exit hook writes its data to
+// GOCOVERDIR, which it reads at exit, and warns on standard error when that
+// is not set: the host passes the emitter no GOCOVERDIR, and the warning
+// would count against the standard-error bounds the tests hold. This points
+// GOCOVERDIR at a directory in the run's HOME, which the host (or the
+// conformance harness) makes fresh for the run and removes afterwards, and
+// is set only once the mode's work is done, so no mode sees it in its
+// environment. A binary built without -cover is left as it is.
+func quietCoverage() {
+	if testing.CoverMode() == "" || os.Getenv("GOCOVERDIR") != "" {
+		return
+	}
+	home := os.Getenv("HOME")
+	if home == "" || !filepath.IsAbs(home) {
+		return
+	}
+	dir := filepath.Join(home, "emittest-cover")
+	if os.MkdirAll(dir, 0o700) == nil {
+		os.Setenv("GOCOVERDIR", dir)
+	}
 }
