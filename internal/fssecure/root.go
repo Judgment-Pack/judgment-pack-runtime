@@ -266,8 +266,8 @@ func (r *Root) sameRegularFile(file *os.File, cleaned string) (os.FileInfo, erro
 		return nil, errors.New("path is not a regular file")
 	}
 	linkInfo, err := r.root.Lstat(cleaned)
-	if err != nil || linkInfo.Mode()&os.ModeSymlink != 0 || !os.SameFile(openedInfo, linkInfo) {
-		return nil, errors.New("path changed or resolves through a final symlink")
+	if err != nil || linkLike(linkInfo) || !os.SameFile(openedInfo, linkInfo) {
+		return nil, errors.New("path changed or resolves through a final link or junction")
 	}
 	return openedInfo, nil
 }
@@ -426,8 +426,8 @@ func (r *Root) openForAppending(cleaned string, access int, create bool) (*os.Fi
 		info, err := r.root.Lstat(cleaned)
 		switch {
 		case err == nil:
-			if info.Mode()&os.ModeSymlink != 0 {
-				return nil, errors.New("path resolves through a final symlink")
+			if linkLike(info) {
+				return nil, errors.New("path resolves through a final link or junction")
 			}
 			// It is there, so nothing needs creating: an open without O_CREATE
 			// cannot bring a swapped-in link's target into existence.
@@ -855,8 +855,8 @@ func (r *Root) openForWrite(cleaned string) (*os.File, bool, error) {
 		info, err := r.root.Lstat(cleaned)
 		switch {
 		case err == nil:
-			if info.Mode()&os.ModeSymlink != 0 {
-				return nil, false, errors.New("path resolves through a final symlink")
+			if linkLike(info) {
+				return nil, false, errors.New("path resolves through a final link or junction")
 			}
 			file, openErr := r.root.OpenFile(cleaned, os.O_WRONLY|nonBlockingOpen, 0)
 			if errors.Is(openErr, fs.ErrNotExist) {

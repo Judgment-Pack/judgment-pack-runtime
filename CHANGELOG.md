@@ -11,6 +11,11 @@ All notable changes to tagged releases are documented here.
   keeps working. It takes effect from the release that names the line stable, which settles every
   provisional code first and tags `startup/v1.0.0`. `jpack` and the
   runtime module stay 0.x. The conformance claim in CONFORMANCE.md is unchanged.
+- **A Windows junction is refused wherever a final symbolic link is.** The checks that open,
+  append to or replace a file without following a final link now also refuse a Windows junction,
+  or another reparse point that is a directory, and their messages say "link or junction". A file
+  reparse point, such as a synced folder's placeholder, is read as before. Symbolic links are
+  refused as before. The conformance claim in CONFORMANCE.md is unchanged.
 - **Fuzzing of the registry's reference readers, run once a day.** New fuzz targets, each with
   a seed corpus drawn from the unit tests: entry references and secret references are accepted
   exactly when they match the registry companion's grammars (§6.2, §6.3), with each refused secret
