@@ -199,7 +199,8 @@ leave host refusals uncoded until "the first host's rows". This runtime adds the
 
 - Errors: `EMIT-MANIFEST`, `EMIT-OWNS-OVERLAP`, `EMIT-KIND-ID`, `EMIT-OPTIONS`, `EMIT-REQUEST`,
   `EMIT-LINK`, `EMIT-PATH-UNREADABLE` and `EMIT-WRITE`.
-- Warnings: `EMIT-ENV-UNSET` and `EMIT-REPORT-TRUNCATED`.
+- Warnings: `EMIT-ENV-UNSET`, `EMIT-REPORT-TRUNCATED` and, by the amendment below,
+  `EMIT-STAGING-LEFTOVER`.
 
 `EMIT-STRAY-WRITE` belongs to the harness.
 
@@ -308,3 +309,30 @@ leave host refusals uncoded until "the first host's rows". This runtime adds the
   4. What do modes mean on Windows?
 - Decided here, for the companion to confirm: owns globs that name `.git`, and globs whose first
   segment holds a `*`, are refused, and the walk never enters `.git` (see the readings above).
+
+## Amendment: staging files a stopped run left (2026-11-17, #450)
+
+A run stopped between staging and renaming, killed for one, leaves its `.jpack-emit-*` files where
+it staged them. When an owns glob matches such a file, it is a stale owned file: write mode deletes
+it, and check mode lists it as `extra`. A glob narrower than the staging name, such as `gen/*.go`,
+does not match it, so the file stayed with nothing to report it.
+
+The host now looks for them. After the preflight passes, and before it compares or writes, it lists
+each directory it stages into: the directory of each response path, or of the stale file that holds
+that path's directory. Each regular file there whose name begins with `.jpack-emit-` and that no
+owns glob matches is reported as `EMIT-STAGING-LEFTOVER`, a warning located at its path. This
+happens in both modes, and the warning does not change the outcome or the exit code.
+
+- **Nothing is deleted.** Only a regular file an owns glob matches is ever deleted, and a file of
+  that name that someone made by hand would otherwise be lost. Deleting the leftovers, or reading
+  staging names as owned, was weighed and not chosen for that reason.
+- **Only those directories.** A directory is listed, not walked, and the preflight has already
+  found no link at or above it. One that cannot be listed (absent, held by a file, or unreadable) is
+  passed over, because the warning only informs; the write or the comparison reports what fails
+  there. The listing comes before anything is staged, so a run never reports its own staging files.
+- **The listing is capped.** At most the first 100 paths are listed, in sorted order
+  (`MaxListedPaths`). When there are more, one more `EMIT-STAGING-LEFTOVER`, located at the
+  repository alone, gives the count of those not listed in its message. The report has no member
+  for counts, and none is added, as in ADR-0093's bounded report.
+
+`EMIT-STAGING-LEFTOVER` is provisional, like the host's other codes (VERSIONING.md).

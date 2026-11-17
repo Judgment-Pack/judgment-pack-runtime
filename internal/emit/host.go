@@ -207,6 +207,9 @@ func Emit(ctx context.Context, m *Manifest, others []*Manifest, in Inputs, opts 
 	if len(unusable) > 0 {
 		return report.Refuse(unusable...)
 	}
+	// A staging file a stopped run left, which no owns glob matches, is
+	// reported in both modes and never deleted.
+	report.Diagnostics = append(report.Diagnostics, ListPaths("EMIT-STAGING-LEFTOVER", DocumentRepository, stagingLeftovers(opts.Root, m.Owns, files, parents))...)
 	if opts.Check {
 		differences, unreadable := compare(opts.Root, files, disk, states)
 		if len(unreadable) > 0 {
