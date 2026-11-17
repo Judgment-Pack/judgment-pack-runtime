@@ -1,0 +1,72 @@
+{
+  "registryFormatVersion": "1.0.0",
+  "id": "https://example.invalid/registries/conformance",
+  "version": "1.0.0",
+  "environments": [
+    "dev",
+    "prod"
+  ],
+  "owners": [
+    "platform"
+  ],
+  "secretScopes": {
+    "dev": {
+      "gcp-sm": [
+        "example-dev"
+      ]
+    },
+    "prod": {
+      "gcp-sm": [
+        "example-prod"
+      ]
+    }
+  },
+  "kinds": [
+    {
+      "kind": "queue",
+      "id": "https://example.invalid/kinds/queue",
+      "version": "1.2.0",
+      "digest": "sha256:687e57181ddc06441e8223c4a7ccc46328918f0df8b4c9b508640b919e5b77da"
+    },
+    {
+      "kind": "topic",
+      "id": "https://example.invalid/kinds/topic",
+      "version": "2.0.0",
+      "digest": "sha256:e3ce1e70f59c1d63ddeccbdc9454a51656abdb56fc0a933abd1eb900d08b61ba"
+    }
+  ],
+  "entries": [
+    {
+      "kind": "queue",
+      "id": "orders",
+      "owner": "platform",
+      "value": {
+        "retention": 3,
+        "password": "secret:gcp-sm:projects/example-dev/secrets/orders-queue/versions/3"
+      }
+    },
+    {
+      "kind": "topic",
+      "id": "events",
+      "owner": "platform",
+      "value": {
+        "partitions": 8
+      }
+    }
+  ],
+  "overlays": [
+    {
+      "environment": "prod",
+      "patches": [
+        {
+          "kind": "queue",
+          "id": "orders",
+          "set": {
+            "/retention": 14,
+            "/password": "secret:gcp-sm:projects/example-prod/secrets/orders-queue/versions/7"
+          }
+        }
+      ]
+    }
+  ]
+}

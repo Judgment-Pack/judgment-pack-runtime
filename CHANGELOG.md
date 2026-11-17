@@ -91,6 +91,39 @@ All notable changes to tagged releases are documented here.
     is still `REG-KIND-PATTERN` alone, and the code's message now says size, not instructions.
   - The conformance claim in CONFORMANCE.md is unchanged.
 
+- **The emitter conformance harness: `jpack emit conformance`** (ADR-0099, proposed; spec RFC 0036
+  §5). It runs an emitter on each of its author's vectors through the host's own request, run and
+  response steps. A vector is `request.json`, or `registry.json` with `kinds/` and an optional
+  `options.json`, with `expected/` or `expected-failure.json`. The harness applies the checks of
+  the level `vectors/harness.json` names (`1.0` when there is none). Level `1.0` has six checks:
+  golden equality; determinism over a changed `HOME`, `TZ`, `LANG` and `SOURCE_DATE_EPOCH`; path
+  safety, with 29 hostile responses the host must refuse, each a row of its own; kind filtering;
+  references, where a run of 32 or more characters of a secret reference fails unless a whole
+  secret reference in the file holds it; and no stray writes. Kind filtering adds a synthetic
+  undeclared kind, restores the registry digest, and requires the same request bytes and the same
+  response. Stray writes are checked in a fresh copy of the repository, without `.git`, of at most
+  256 MiB and 100 000 entries (`EMIT-STRAY-WRITE`). `--update` rewrites `expected/` and never
+  touches an expected-failure vector. A run that gives no files is recorded as the marker
+  `expected/~empty` alone, a zero-byte file that git can track. A symbolic link in the repository
+  whose target lies inside it is pointed into the copy, and one that leads out of it refuses the
+  run (`EMIT-HARNESS-BOUND`) before any emitter runs. The report (`harnessReportVersion` `1.0.0`)
+  is canonical JSON with one row per vector and check. It exits 0, 1 or 2, as §5 says. `EMIT-VECTOR` and
+  `EMIT-HARNESS-BOUND` are new codes, provisional. The evaluator's claim in CONFORMANCE.md is
+  unchanged.
+- **A Go typed facts builder emitter: `cmd/jpack-emit-go-facts`** (ADR-0100, proposed). This is
+  the reference emitter of spec RFC 0037 §6 for Go, run under the RFC 0036 emitter contract with
+  `"input": "factsContracts"`. Its manifest is `cmd/jpack-emit-go-facts/emitter.json`. For each
+  facts contract it writes one Go file, and it adds a shared `facts_support.go`. The generated code
+  holds a struct per object position, a constructor whose arguments are the members the contract
+  always holds, and typed constants for string values. It has a `Decimal` that is never a
+  `float64`, and a `Build` that returns the facts document as RFC 8785 canonical JSON. `Build`
+  refuses a nil required value, a value outside the contract's values, or a string that is not
+  valid UTF-8. The generated code depends on the Go standard library only. The emitter refuses a
+  contract with a position it does not generate (an `anyOf` or an open object, among others), and
+  one whose generated Go names cannot be formed or would collide: it exits 1 with a fixed line on
+  standard error. Its vectors are in RFC 0036 §5's layout, and the output of one vector is compiled
+  and tested as a package. No `jpack` command changes. The conformance claim in CONFORMANCE.md is
+  unchanged.
 - **Review follow-ups before the release** (the LOW findings of the reviews of this release's
   changes).
   - The Terraform reader orders member names without decoding the bytes two names share. A state
@@ -117,6 +150,7 @@ All notable changes to tagged releases are documented here.
     `{"code","message"}` alone: neither `sha256` nor `bytes`, since the stream's whole length is
     not read, and a fixed message that says the input was standard input (ADR-0097 reading 18). A
     file's `TF-SIZE` is unchanged, with the whole file's sha256 and size.
+  - The conformance claim in CONFORMANCE.md is unchanged.
 
 ## 0.47.0 - 2026-11-16
 
