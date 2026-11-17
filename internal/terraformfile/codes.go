@@ -96,11 +96,11 @@ var messages = map[string]string{
 	CodeSize:        "The file is longer than the source's maxBytes, and was not parsed.",
 	CodeJSON:        "The file is not one strict JSON value: UTF-8 with no byte-order mark and no lone surrogate escape, white space only after the value, nesting at most 128 deep, and no duplicate member name in any object. A binary plan file is refused here: pass the output of terraform show -json instead.",
 	CodeFormat:      "The file's top-level value is not an object whose format_version is a string in this reader's accepted table for the source's document. A raw state file has no format_version: pass the output of terraform show -json instead.",
-	CodeDocument:    "The file does not have the form of the source's document: a plan has a planned_values object and its resource_changes are an array, a state has neither and its values are an object holding a root_module, and every resource of the read section names its address, type, name, mode and provider as strings.",
+	CodeDocument:    "The file does not have the form of the source's document: a plan has a planned_values object and its resource_changes are an array, a state has neither and its values are an object holding a root_module, every resource of the read section names its address, type, name, mode and provider as strings, a deposed object's key is a non-empty string, and no two resources of the read section share an id (the address, with a deposed object's key).",
 	CodeSensitivity: "A resource of the read section, selected or not, does not carry its sensitivity mirror, or carries one that is not true, false, an object or an array at every position.",
 	CodeSelectBound: "The source selects more resources than its select.max.",
 	CodeNumber:      "A number in the acquired value has a normal form longer than 64 characters.",
-	CodeValueLimit:  "The acquired value's canonical JSON is longer than this runtime's bound of 268435456 bytes.",
+	CodeValueLimit:  "The acquired value is over this runtime's bound, the lesser of 268435456 bytes and sixteen times the file: its canonical JSON is longer, or a selected plan resource's afterUnknown pointers, each charged eight bytes more, pass what remains of the bound.",
 }
 
 // streamSizeMessage is TF-SIZE's fixed message for a stream: ReadStream stops

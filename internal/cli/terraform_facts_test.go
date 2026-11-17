@@ -30,6 +30,7 @@ type tfChange struct {
 	actions                  []string
 	before, after            any
 	beforeSens, afterSens    any
+	deposed                  string
 }
 
 func (c tfChange) json() map[string]any {
@@ -39,6 +40,9 @@ func (c tfChange) json() map[string]any {
 	}
 	if c.index != nil {
 		item["index"] = c.index
+	}
+	if c.deposed != "" {
+		item["deposed"] = c.deposed
 	}
 	change := map[string]any{"actions": c.actions, "before": c.before, "after": c.after, "after_unknown": map[string]any{},
 		"before_sensitive": c.beforeSens, "after_sensitive": c.afterSens}
@@ -71,6 +75,7 @@ type tfResource struct {
 	address, typ, name, mode string
 	index                    any
 	values, sensitive        any
+	deposedKey               string
 }
 
 func (r tfResource) json() map[string]any {
@@ -81,6 +86,9 @@ func (r tfResource) json() map[string]any {
 	}
 	if r.index != nil {
 		item["index"] = r.index
+	}
+	if r.deposedKey != "" {
+		item["deposed_key"] = r.deposedKey
 	}
 	if r.values == nil {
 		item["values"] = map[string]any{}
@@ -614,6 +622,82 @@ func TestTerraformFactsHoldsTheBatchIDLimit(t *testing.T) {
 	}
 	if strings.Contains(stderr, "kkkk") || strings.Contains(stderr, "synthetic_sql_user") {
 		t.Fatalf("the diagnostic carries the address: %q", stderr)
+	}
+}
+
+// A deposed object's line has the resource's id, its address, " deposed "
+// and its key, and follows its current object; its resource carries the key
+// as deposed. The batch evaluates with one result per id.
+func TestTerraformFactsWritesADeposedObjectsID(t *testing.T) {
+	data := tfPlan(t,
+		tfChange{address: "synthetic_sql_user.app", typ: "synthetic_sql_user", name: "app", actions: []string{"delete"}, before: map[string]any{"role": "reader"}, deposed: "0a1b2c3d"},
+		tfChange{address: "synthetic_sql_user.app", typ: "synthetic_sql_user", name: "app", actions: []string{"no-op"}, before: map[string]any{"role": "writer"}, after: map[string]any{"role": "writer"}},
+	)
+	code, out, stderr := runTest(t, []string{"terraform", "facts", "--plan", tfFile(t, "plan.json", data), "--type", "synthetic_sql_user"}, "")
+	lines := tfLines(t, out)
+	if want := []string{"synthetic_sql_user.app", "synthetic_sql_user.app deposed 0a1b2c3d"}; code != 0 || fmt.Sprint(tfIDs(lines)) != fmt.Sprint(want) {
+		t.Fatalf("%d ids %q, want %q; %s", code, tfIDs(lines), want, stderr)
+	}
+	if _, ok := lines[0].Facts.Resource["deposed"]; ok || lines[1].Facts.Resource["deposed"] != "0a1b2c3d" {
+		t.Fatalf("deposed members %v, %v", lines[0].Facts.Resource["deposed"], lines[1].Facts.Resource["deposed"])
+	}
+	for i, address := range []string{"synthetic_sql_user.app", "synthetic_sql_user.app"} {
+		if lines[i].Facts.Resource["address"] != address {
+			t.Fatalf("line %d address %v", i, lines[i].Facts.Resource["address"])
+		}
+	}
+	// Two objects of one id refuse the file, and write no line.
+	twice := tfPlan(t,
+		tfChange{address: "synthetic_sql_user.app", typ: "synthetic_sql_user", name: "app", actions: []string{"delete"}, deposed: "0a1b2c3d"},
+		tfChange{address: "synthetic_sql_user.app", typ: "synthetic_sql_user", name: "app", actions: []string{"delete"}, deposed: "0a1b2c3d"},
+	)
+	code, out, stderr = runTest(t, []string{"terraform", "facts", "--plan", tfFile(t, "plan.json", twice), "--type", "synthetic_sql_user"}, "")
+	if code != 2 || out != "" || !strings.Contains(stderr, `"code":"TF-DOCUMENT"`) {
+		t.Fatalf("one id twice: %d %q %q", code, out, stderr)
+	}
+}
+
+// A deposed object's id is longer than its address, so the batch id limit
+// holds the id: an address within the bound whose id passes it refuses the
+// whole run with FACTS-ID-LIMIT, and the diagnostic carries neither.
+func TestTerraformFactsHoldsADeposedIDToTheBatchIDLimit(t *testing.T) {
+	const key = "0a1b2c3d"
+	const prefix, suffix = `synthetic_sql_user.u["`, `"]`
+	address := func(length int) string {
+		return prefix + strings.Repeat("k", length-len(prefix)-len(suffix)) + suffix
+	}
+	state := func(address string) []byte {
+		index := address[len(prefix) : len(address)-len(suffix)]
+		return tfState(t, tfModule("", []tfResource{
+			{address: address, typ: "synthetic_sql_user", name: "u", index: index, values: map[string]any{"role": "reader"}},
+			{address: address, typ: "synthetic_sql_user", name: "u", index: index, values: map[string]any{"role": "reader"}, deposedKey: key},
+		}))
+	}
+	idLength := func(address string) int { return len(address + " deposed " + key) }
+	at := address(MaxBatchIDBytes - len(" deposed "+key))
+	if idLength(at) != MaxBatchIDBytes {
+		t.Fatalf("id of %d bytes", idLength(at))
+	}
+	code, out, stderr := runTest(t, []string{"terraform", "facts", "--state", tfFile(t, "state.json", state(at)), "--type", "synthetic_sql_user"}, "")
+	if got := tfIDs(tfLines(t, out)); code != 0 || len(got) != 2 || got[1] != at+" deposed "+key {
+		t.Fatalf("a deposed id at the bound: %d %v %q", code, got, stderr)
+	}
+	over := address(MaxBatchIDBytes - len(" deposed "+key) + 1)
+	if len(over) > MaxBatchIDBytes || idLength(over) != MaxBatchIDBytes+1 {
+		t.Fatalf("address of %d bytes, id of %d", len(over), idLength(over))
+	}
+	data := state(over)
+	code, out, stderr = runTest(t, []string{"terraform", "facts", "--state", tfFile(t, "state.json", data), "--type", "synthetic_sql_user"}, "")
+	if code != 2 || out != "" {
+		t.Fatalf("a deposed id a byte over the bound: %d %.200q", code, out)
+	}
+	sum := sha256.Sum256(data)
+	want := `{"bytes":` + fmt.Sprint(len(data)) + `,"code":"FACTS-ID-LIMIT","message":` + string(mustJCS(t, terraformFactsMessage(CodeFactsIDLimit))) + `,"sha256":"` + hex.EncodeToString(sum[:]) + `"}` + "\n"
+	if stderr != want {
+		t.Fatalf("stderr:\n got %q\nwant %q", stderr, want)
+	}
+	if strings.Contains(stderr, "kkkk") || strings.Contains(stderr, key) {
+		t.Fatalf("the diagnostic carries the id: %q", stderr)
 	}
 }
 
