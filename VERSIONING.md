@@ -207,12 +207,15 @@ would be a breaking change.
 
 `jpack emit conformance` (ADR-0099) writes the harness report, `harnessReportVersion` `"1.0.0"`,
 RFC 0036's, and reads the harness level of `vectors/harness.json`; it applies level `"1.0"`, and a
-level it does not know refuses the run. It reports the companion's `EMIT-STRAY-WRITE`. Two more
-codes are this runtime's and provisional in the same way: `EMIT-VECTOR` (the vector layout) and
+level it does not know refuses the run. It reports the companion's `EMIT-STRAY-WRITE`. Three more
+codes are this runtime's and provisional in the same way: `EMIT-VECTOR` (the vector layout),
 `EMIT-HARNESS-BOUND` (a check that could not be completed: a harness bound, or a determinism
 run's fresh `HOME` that could not be made; an interrupt is `EMIT-INTERRUPTED`, no longer
-`EMIT-HARNESS-BOUND`). Its own bounds, a repository copy of 256 MiB and 100 000 entries and a
-references scan of 1 MiB of strings and 2^32 steps a vector, are this runtime's; a tighter bound would be a breaking change.
+`EMIT-HARNESS-BOUND`), and the warning `EMIT-LINK-OMITTED` (a link that leads out of the
+repository and that git does not track, left out of the copy). Its own bounds, a repository copy
+of 256 MiB and 100 000 entries, a git index of 64 MiB and 1 048 576 entries, and a references scan
+of 1 MiB of strings and 2^32 steps a vector, are this runtime's; a tighter bound would be a
+breaking change.
 
 ## Go API
 

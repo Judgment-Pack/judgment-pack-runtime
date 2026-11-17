@@ -136,6 +136,7 @@ var Codes = map[string]codeInfo{
 	// The conformance harness's, provisional (ADR-0099).
 	"EMIT-VECTOR":        {SeverityError, "The vectors are not of the harness's layout: harness.json or its level, a vector's files, no vectors at all, or a vector past a bound."},
 	"EMIT-HARNESS-BOUND": {SeverityError, "A check could not be completed: a bound of the harness (the repository copy, the registry with the synthetic kind, or the references scan), or a fresh HOME for a determinism run that could not be made."},
+	"EMIT-LINK-OMITTED":  {SeverityWarning, "A symbolic link or junction that leads out of the repository was left out of the copy the emitter runs in: git does not track it, and no owned path and no path to the vectors could name it."},
 }
 
 // Location says where a host diagnostic applies. Pointer is a JSON Pointer
@@ -172,7 +173,7 @@ func diagnostic(code string, location Location) Diagnostic {
 }
 
 // ListPaths returns the diagnostics of a warning that lists paths of one
-// document (EMIT-STAGING-LEFTOVER): one at each of the
+// document (EMIT-STAGING-LEFTOVER, EMIT-LINK-OMITTED): one at each of the
 // first MaxListedPaths paths in sorted order, each with the code's fixed
 // message, and, when there are more, one more of the code at the document
 // alone. That one gives the count of the paths not listed, the one number a
