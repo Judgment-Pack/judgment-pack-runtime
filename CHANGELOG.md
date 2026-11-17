@@ -10,24 +10,28 @@ All notable changes to tagged releases are documented here.
   exited 0. `EMIT-PROCESS` keeps an emitter that could not be started, exited non-zero or ran out
   of time. `jpack emit conformance` reports an interrupt with `EMIT-INTERRUPTED` at the vector,
   where it gave `EMIT-HARNESS-BOUND`, so one code names an interrupt in both commands; the two
-  codes' fixed messages no longer mention an interrupt.
+  codes' fixed messages no longer mention an interrupt. The conformance claim in CONFORMANCE.md is
+  unchanged.
 - **`jpack emit conformance --update` gates its write as `jpack emit` does** (ADR-0099). An
-  interrupt or SIGTERM after a vector's clean run, before its `expected/` is replaced, now
-  refuses the run at that vector (`EMIT-INTERRUPTED`) and leaves `expected/` untouched; before,
+  interrupt or SIGTERM after a vector's clean run, before its `expected/` is replaced, now refuses
+  the run at that vector (`EMIT-INTERRUPTED`) and leaves `expected/` untouched; before,
   `expected/` was rewritten and the report dropped its "updated" row. Once the replacement has
-  begun, a second signal waits until it ends, so `expected/` is never left missing between its
-  two renames; the run is then refused as interrupted, and the vector's check 1 row still says
-  `expected/` was written. A signal after the replacement ends `jpack` again.
+  begun, a second signal waits until it ends, so `expected/` is never left missing between its two
+  renames; the run is then refused as interrupted, and the vector's check 1 row still says
+  `expected/` was written. A signal after the replacement ends `jpack` again. The conformance
+  claim in CONFORMANCE.md is unchanged.
 - **An emitter inherits no descriptor where `/dev/fd` lists only 0-2.** Before the first emitter
-  starts, `jpack` marks every descriptor above standard error close-on-exec. Where `/dev/fd`
-  lists nothing above 2, as on a system without a full descriptor file system, it now also marks
-  every number from 3 below the descriptor limit (at most 65536), as it already did where the
-  listing could not be read. No release target is affected.
+  starts, `jpack` marks every descriptor above standard error close-on-exec. Where `/dev/fd` lists
+  nothing above 2, as on a system without a full descriptor file system, it now also marks every
+  number from 3 below the descriptor limit (at most 65536), as it already did where the listing
+  could not be read. No release target is affected. The conformance claim in CONFORMANCE.md is
+  unchanged.
 - **The mutation table's check is stricter.** `scripts/check-mutation-table.py` now also fails
   when a row's mutant is not `every A becomes B` with `A` in the body of the row's mutant site,
   and when a row's provisional column differs from what the source marks: the section heading of
   each code in `internal/emit/codes.go`, and the comment of a constant that holds a code.
-  `scripts/check-mutation-table-probe.py` probes both rules in memory.
+  `scripts/check-mutation-table-probe.py` probes both rules in memory. The conformance claim in
+  CONFORMANCE.md is unchanged.
 
 ## 0.49.0 - 2026-11-17
 
