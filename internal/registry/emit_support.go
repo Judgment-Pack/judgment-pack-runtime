@@ -126,7 +126,9 @@ const maxLocationPointerBytes = 512
 // ReadLocation reads a location of §7.3's form from a document this reader did
 // not write (an emitter's diagnostic, RFC 0036 §3). Every member is checked
 // against its form, and a member the table does not define refuses it. It
-// returns false for anything else.
+// returns false for anything else. A location of the right form can still
+// name what is not there; the caller resolves it against what it gave (the
+// emitter host resolves it against the request, with PointerResolves).
 func ReadLocation(raw any) (Location, bool) {
 	object, ok := raw.(map[string]any)
 	if !ok {
@@ -182,6 +184,19 @@ func ReadLocation(raw any) (Location, bool) {
 		location.Line, location.Column = line, column
 	}
 	return location, true
+}
+
+// PointerResolves reports whether a JSON Pointer names an existing position
+// in a decoded value: its tokens are read as a location's are, and each must
+// be a member of the object or an index of the array it meets. Its cost is
+// the pointer's length.
+func PointerResolves(value any, pointer string) bool {
+	tokens, err := parsePointer(pointer)
+	if err != nil {
+		return false
+	}
+	_, ok := lookup(value, tokens)
+	return ok
 }
 
 // Pin is one pinned kind of a registry.

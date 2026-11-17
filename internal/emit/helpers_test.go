@@ -95,7 +95,7 @@ func manifestDoc(mode []string, changes map[string]any) map[string]any {
 		"reads":                  []any{map[string]any{"kind": "queue", "id": "https://example.invalid/kinds/queue", "versions": "^1.0.0"}},
 		"requestVersions":        []any{"1.0.0"},
 		"environments":           "each",
-		"command":                append([]any{"bin/emitter", emittest.Switch}, toAny(mode)...),
+		"command":                append([]any{emitterCommand, emittest.Switch}, toAny(mode)...),
 		"owns":                   []any{"gen/**"},
 	}
 	for name, value := range changes {
@@ -141,6 +141,25 @@ func writeFiles(t *testing.T, root string, files map[string]string) {
 			t.Fatal(err)
 		}
 	}
+}
+
+// testRequest is the request the default manifest's run forms over the test
+// registry, with environments "each" or "all"; for "each", the one for
+// environment.
+func testRequest(t *testing.T, environments, environment string) []byte {
+	t.Helper()
+	m := mustManifest(t, manifestDoc([]string{"exit", "0"}, map[string]any{"environments": environments}))
+	requests, diagnostics := FormRequests(m, Inputs{Registry: testRegistry(t)})
+	if diagnostics != nil {
+		t.Fatalf("requests: %v", codes(diagnostics))
+	}
+	for _, request := range requests {
+		if request.Environment == environment {
+			return request.Bytes
+		}
+	}
+	t.Fatalf("no request for %q", environment)
+	return nil
 }
 
 // responseJSON is a response document holding files.

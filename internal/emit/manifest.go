@@ -129,10 +129,12 @@ func ReadManifest(data []byte) (*Manifest, []Diagnostic) {
 	m.Command = readCommand(root["command"], fail)
 	for i, source := range readStrings(root, "owns", true, func(string) bool { return true }, fail) {
 		glob, err := parseGlob(source)
-		// A bare "**" owns the whole repository, so every file the emitter
-		// does not answer with would be deleted as stale. A ".git" segment
-		// is refused by the path rules.
-		if err != nil || source == "**" {
+		// A glob whose first segment holds a "*" ("**", "**/*", "*/**", "*")
+		// can own files across the whole repository, every one of which the
+		// emitter does not answer with would be deleted as stale: the first
+		// segment is a literal directory or file name. A ".git" segment is
+		// refused by the path rules.
+		if err != nil || !literalFirstSegment(source) {
 			fail("owns", strconv.Itoa(i))
 			continue
 		}
@@ -151,6 +153,13 @@ func ReadManifest(data []byte) (*Manifest, []Diagnostic) {
 		return nil, diagnostics
 	}
 	return m, nil
+}
+
+// literalFirstSegment says whether an owns glob's first segment holds no
+// "*", so that the glob owns paths below one named top-level name only.
+func literalFirstSegment(source string) bool {
+	first, _, _ := strings.Cut(source, "/")
+	return !strings.Contains(first, "*")
 }
 
 func readReads(value any, fail func(...string)) []Read {

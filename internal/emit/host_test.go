@@ -99,6 +99,66 @@ func TestEmitWritesTheResponseAndDeletesStaleOwnedFiles(t *testing.T) {
 	}
 }
 
+// Only what the owns globs match is deleted as stale, and an unowned file
+// that blocks a response path's directory refuses the run before any stale
+// file is deleted.
+func TestEmitDeletesOnlyOwnedFilesAndStopsAtAnUnownedBlocker(t *testing.T) {
+	root := testRepo(t)
+	unowned := map[string]string{"README.md": "readme\n", "gen/keep.txt": "keep\n", "gen/a": "an unowned file\n"}
+	writeFiles(t, root, unowned)
+	writeFiles(t, root, map[string]string{"gen/z.sql": "stale\n"})
+	owns := map[string]any{"owns": []any{"gen/*.sql", "gen/*/b"}}
+	kept := func(paths map[string]string) {
+		t.Helper()
+		for path, want := range paths {
+			if got, _, ok := onDisk(t, root, path); !ok || got != want {
+				t.Errorf("%s holds %q, want %q", path, got, want)
+			}
+		}
+	}
+
+	// gen/a/b is owned, but its directory is held by gen/a, which is not:
+	// nothing is written or deleted.
+	blocked := responseJSON(t, map[string]any{"path": "gen/a/b", "text": "b\n"}, map[string]any{"path": "gen/y.sql", "text": "y\n"})
+	report := echoHost(t, root, blocked, false, owns)
+	if !slices.Equal(codes(report.Diagnostics), []string{"EMIT-WRITE@gen/a/b"}) || len(report.Written) != 0 || len(report.Deleted) != 0 {
+		t.Fatalf("blocked: %s", reportJSON(t, report))
+	}
+	kept(unowned)
+	kept(map[string]string{"gen/z.sql": "stale\n"})
+	if _, _, ok := onDisk(t, root, "gen/y.sql"); ok {
+		t.Error("a blocked run wrote gen/y.sql")
+	}
+
+	// Without the blocker in the response, the stale owned file goes and
+	// every unowned file stays.
+	report = echoHost(t, root, responseJSON(t, map[string]any{"path": "gen/y.sql", "text": "y\n"}), false, owns)
+	if report.Outcome != OutcomeWritten || !slices.Equal(report.Written, []string{"gen/y.sql"}) || !slices.Equal(report.Deleted, []string{"gen/z.sql"}) {
+		t.Fatalf("write: %s", reportJSON(t, report))
+	}
+	kept(unowned)
+	kept(map[string]string{"gen/y.sql": "y\n"})
+	if _, _, ok := onDisk(t, root, "gen/z.sql"); ok {
+		t.Error("the stale gen/z.sql is still there")
+	}
+}
+
+// gen/** owns what is below gen, never a file named gen itself: a trailing
+// "**" matches one or more segments.
+func TestEmitDoesNotOwnTheNameBeforeATrailingDoubleStar(t *testing.T) {
+	for _, check := range []bool{false, true} {
+		root := testRepo(t)
+		writeFiles(t, root, map[string]string{"gen": "a file named gen\n"})
+		report := echoHost(t, root, responseJSON(t), check, nil)
+		if report.Exit() != 0 || len(report.Deleted) != 0 || len(report.Differences) != 0 {
+			t.Fatalf("check %v: %s", check, reportJSON(t, report))
+		}
+		if got, _, ok := onDisk(t, root, "gen"); !ok || got != "a file named gen\n" {
+			t.Fatalf("check %v: gen holds %q", check, got)
+		}
+	}
+}
+
 func TestEmitCheckReportsEachDifferenceAndWritesNothing(t *testing.T) {
 	root := testRepo(t)
 	writeFiles(t, root, map[string]string{
@@ -215,12 +275,14 @@ func TestEmitValidatesEveryResponseBeforeWriting(t *testing.T) {
 }
 
 func TestEmitRefusesAPathThatIsADirectoryOfAnother(t *testing.T) {
-	for _, owns := range []string{"gen/**", "gen/a/**"} {
+	// A trailing "**" does not match the name before it, so the second
+	// manifest owns gen/a by a glob of its own.
+	for _, owns := range [][]any{{"gen/**"}, {"gen/a", "gen/a/**"}} {
 		for _, check := range []bool{false, true} {
 			root := testRepo(t)
 			writeFiles(t, root, map[string]string{"gen/a/stale": "stale\n"})
 			response := responseJSON(t, map[string]any{"path": "gen/a", "text": "a\n"}, map[string]any{"path": "gen/a/b", "text": "b\n"})
-			report := echoHost(t, root, response, check, map[string]any{"owns": []any{owns}})
+			report := echoHost(t, root, response, check, map[string]any{"owns": owns})
 			if report.Exit() != ExitNotDone || !slices.Equal(codes(report.Diagnostics), []string{"EMIT-RESPONSE@/files/1/path"}) {
 				t.Fatalf("owns %s, check %v: %s", owns, check, reportJSON(t, report))
 			}
@@ -250,6 +312,9 @@ func TestEmitRefusesAPathThatIsADirectoryOfAnother(t *testing.T) {
 func TestEmitNeverOwnsGitsDirectory(t *testing.T) {
 	gitFiles := map[string]string{
 		"gen/.git/HEAD": "ref: refs/heads/main\n", "gen/sub/.GIT/config": "[core]\n", "gen/module/.git": "gitdir: ../.git/modules/m\n",
+		// What NTFS and HFS+ read as .git: the 8.3 short name, and .git
+		// with a code point HFS+ ignores.
+		"gen/short/GIT~1/config": "[core]\n", "gen/hfs/.g\u200cit/HEAD": "ref: refs/heads/main\n",
 	}
 	for _, check := range []bool{false, true} {
 		root := testRepo(t)

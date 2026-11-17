@@ -6,10 +6,15 @@ import (
 )
 
 // Glob is one owns pattern (RFC 0036 §1): segments separated by "/", where a
-// segment "**" matches any number of path segments, "*" inside a segment
-// matches any run of characters other than "/", and every other character is
-// itself. There is no escape, no "?" and no class. "*" matches a segment that
-// begins with ".": a glob names paths, not what a shell would list.
+// segment "**" matches zero or more path segments, or one or more at the end
+// of the glob, as in gitignore ("a/**/b" matches "a/b"; "gen/**" never
+// matches "gen"); "*" inside a segment matches any run of characters other
+// than "/"; and every other character is itself. There is no escape, no "?"
+// and no class. "*" matches a segment that begins with ".": a glob names
+// paths, not what a shell would list.
+//
+// A trailing "**" is held as "*" followed by "**", so that every "**" the
+// matchers meet matches zero or more segments.
 type Glob struct {
 	source   string
 	segments []globSegment
@@ -42,6 +47,9 @@ func parseGlob(source string) (Glob, error) {
 			return Glob{}, errGlob
 		}
 		g.segments = append(g.segments, globSegment{pattern: []rune(segment)})
+	}
+	if last := len(g.segments) - 1; g.segments[last].any {
+		g.segments = append(g.segments[:last], globSegment{pattern: []rune("*")}, globSegment{any: true})
 	}
 	return g, nil
 }

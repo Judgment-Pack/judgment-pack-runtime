@@ -184,7 +184,9 @@ that reason. The copy keeps an honest emitter's mistake out of the repository. I
 sandbox: the emitter runs with the user's rights.
 
 **Hostile responses.** Each is passed to `emit.ParseResponse` for a fixed manifest of the
-harness's own that owns `gen/**`, with request version `1.0.0`. They do not go through a hook in
+harness's own that owns `gen/**`, with request version `1.0.0` and a fixed request of one
+environment, `dev`, one kind, `queue`, and one entry, `queue/orders`, which a diagnostic's location
+is resolved against. They do not go through a hook in
 `emit.RunOptions`: `ParseResponse` is the step `emit.Run` applies to every emitter's standard
 output, so a refusal there is the host's refusal, and no host run needs the hook. This is decided.
 Each is a row of its own,

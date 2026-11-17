@@ -38,6 +38,13 @@ func TestManifestRefusesEachMalformedMember(t *testing.T) {
 		{"owns partial double star", map[string]any{"owns": []any{"gen/a**"}}, "/owns/0"},
 		{"owns backslash", map[string]any{"owns": []any{`gen\**`}}, "/owns/0"},
 		{"owns everything", map[string]any{"owns": []any{"gen/**", "**"}}, "/owns/1"},
+		// Each of these owns every path, or every top-level file, as "**"
+		// does: no owns glob may begin with a segment that holds a "*".
+		{"owns everything below any file", map[string]any{"owns": []any{"gen/**", "**/*"}}, "/owns/1"},
+		{"owns everything twice", map[string]any{"owns": []any{"gen/**", "**/**"}}, "/owns/1"},
+		{"owns everything below any directory", map[string]any{"owns": []any{"gen/**", "*/**"}}, "/owns/1"},
+		{"owns every top-level file", map[string]any{"owns": []any{"gen/**", "*"}}, "/owns/1"},
+		{"owns a wildcard top-level name", map[string]any{"owns": []any{"gen/**", "g*/a"}}, "/owns/1"},
 		{"owns git's directory", map[string]any{"owns": []any{".git/**"}}, "/owns/0"},
 		{"owns git's directory in another case", map[string]any{"owns": []any{"sub/.GIT/*"}}, "/owns/0"},
 		{"environments with facts contracts", map[string]any{"input": "factsContracts"}, "/environments"},
@@ -74,6 +81,12 @@ func TestManifestAcceptsItsOptionalMembers(t *testing.T) {
 	}))
 	if !m.Deprecated || m.Input != InputResolved || !slices.Equal(m.Env, []string{"EMIT_TOKEN_NAME"}) || m.Command[0] != "./bin/emitter" {
 		t.Fatalf("manifest: %+v", m)
+	}
+	// An owns glob whose first segment is a literal is admitted.
+	owns := []any{"gen/**", "db/*.sql", "a/**/b", "README.md"}
+	m = mustManifest(t, manifestDoc([]string{"exit", "0"}, map[string]any{"owns": owns}))
+	if len(m.Owns) != len(owns) || m.Owns[0].String() != "gen/**" {
+		t.Fatalf("owns: %v", m.Owns)
 	}
 	facts := mustManifest(t, manifestDoc([]string{"exit", "0"}, map[string]any{"input": "factsContracts", "environments": nil}))
 	if facts.Input != InputFactsContracts || facts.Environments != "" {
@@ -130,9 +143,11 @@ func TestGlobMatchBelowAndOverlap(t *testing.T) {
 		glob, path string
 		want       bool
 	}{
-		// "Any number of segments" counts zero: gen/** owns a file named gen,
-		// unlike a gitignore pattern.
-		{"gen/**", "gen/a", true}, {"gen/**", "gen/a/b/c", true}, {"gen/**", "gen", true}, {"gen/**", "other/a", false},
+		// A trailing "**" matches one or more segments, as in gitignore:
+		// gen/** never owns a file named gen. One in the middle matches zero
+		// or more: a/**/b matches a/b.
+		{"gen/**", "gen/a", true}, {"gen/**", "gen/a/b/c", true}, {"gen/**", "gen", false}, {"gen/**", "other/a", false},
+		{"gen/**", "gen/.hidden", true}, {"a/**/b/**", "a/b", false}, {"a/**/b/**", "a/b/c", true}, {"**", "a", true},
 		{"gen/*.sql", "gen/roles.sql", true}, {"gen/*.sql", "gen/a/roles.sql", false}, {"gen/*.sql", "gen/.sql", true},
 		{"**/x.json", "x.json", true}, {"**/x.json", "a/b/x.json", true}, {"a/**/b", "a/b", true}, {"a/**/b", "a/x/y/b", true},
 		{"gen/a*b*c", "gen/abc", true}, {"gen/a*b*c", "gen/axxbyyc", true}, {"gen/a*b*c", "gen/acb", false},
@@ -160,7 +175,8 @@ func TestGlobMatchBelowAndOverlap(t *testing.T) {
 	}{
 		{"gen/**", "gen/db/*.sql", true}, {"gen/a/**", "gen/b/**", false}, {"**", "x", true}, {"*.go", "*_test.go", true},
 		{"gen/*.sql", "gen/*.json", false}, {"a*", "*b", true}, {"ab*", "ac*", false}, {"**/a", "b/**", true},
-		{"gen/x", "gen/x/**", true}, {"gen/x", "gen/x/*", false}, {"gen/*/a", "gen/b/*", true}, {"gen/**/z", "gen/*/y", false},
+		{"gen/x", "gen/x/**", false}, {"gen/x/a", "gen/x/**", true}, {"gen/x", "gen/x/*", false}, {"gen/**", "gen", false},
+		{"gen/**", "gen/**/a", true}, {"a/**/b", "a/b", true}, {"a/**/b", "a/**", true}, {"gen/*/a", "gen/b/*", true}, {"gen/**/z", "gen/*/y", false},
 	}
 	for _, c := range overlaps {
 		if got := glob(c.a).Overlaps(glob(c.b)); got != c.want {

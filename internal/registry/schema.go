@@ -411,9 +411,8 @@ func (c *schemaCompiler) resolveRefs(root *schemaNode) {
 		}
 		edges[ref.from] = append(edges[ref.from], ref.name)
 	}
-	if c.failed {
-		return
-	}
+	// The cycle check covers every $ref that names a definition, whatever
+	// else the schema has failed (registry companion §3.3).
 	state := map[string]int{} // 1 visiting, 2 done
 	var cyclic func(name string) bool
 	cyclic = func(name string) bool {
@@ -437,6 +436,9 @@ func (c *schemaCompiler) resolveRefs(root *schemaNode) {
 			c.fail("REG-KIND-SCHEMA-REF", ref.path)
 			return
 		}
+	}
+	if c.failed {
+		return
 	}
 	var link func(node *schemaNode)
 	seen := map[*schemaNode]bool{}

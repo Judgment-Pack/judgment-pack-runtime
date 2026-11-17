@@ -55,8 +55,9 @@ checks every member at its pointer (`EMIT-MANIFEST`):
 - `options` is compiled with the registry's schema subset.
 - `env` names follow the grammar, are not reserved and are not repeated.
 - `command` and `owns` are relative, with no `..` segment.
-- An owns glob uses `*` within one segment and `**` as a whole segment. A bare `**` is refused, and
-  so is a glob with a `.git` segment in any case (see below).
+- An owns glob uses `*` within one segment and `**` as a whole segment. Its first segment is a
+  literal, with no `*`, so `**`, `**/*`, `*/**` and `*` are refused. So is a glob with a segment
+  that a file system reads as `.git` (see below).
 
 `--other-manifest` names the repository's other manifests. Their owns globs must not overlap this
 one's (`EMIT-OWNS-OVERLAP`). Overlap is decided exactly: two globs overlap when one path can match
@@ -81,12 +82,14 @@ failure is `EMIT-RESPONSE`, at its pointer.
   carriage return. Base64 is canonical and unbroken.
 - The mode is `0644` or `0755`.
 - Each path is relative and safe. It has no `.`, `..`, empty or `~` segment, no trailing `/`, no
-  NUL, backslash or control character, and no `:`, so no drive letter. No segment is `.git`, in any
-  case. It is owned.
+  NUL, backslash or control character, and no `:`, so no drive letter. No segment is one that NTFS
+  or HFS+ reads as `.git`. It is owned.
 - `files` is sorted by path, and no two paths are equal once case is folded and normalized. No path
   is a directory of another (`a` and `a/b`), since writing one would replace or block the other.
-- Each emitter diagnostic has an `x-` code, a `warning` or `error` severity, and a §7.3 location.
-  An `error` fails the run.
+- Each emitter diagnostic has an `x-` code, a `warning` or `error` severity, and a §7.3 location
+  that names only what the request holds (below). An `error` fails the run. A diagnostic whose
+  location does not resolve is `EMIT-RESPONSE` at its location, and it is not copied into the
+  report.
 
 A path two runs of one host both give, or one that is a directory of another run's, is refused as
 well, because the runs answer into one set of files.
@@ -138,13 +141,18 @@ following.
 
 1. It walks the owned paths without following a link. A link that an owns glob matches, or below
    which one can match, refuses the run (`EMIT-LINK`), as does one met at or above a response path.
-   The walk passes over anything named `.git`, in any case, so git's directory, or the `.git` file
-   of a worktree or submodule, is never owned and never deleted as stale.
+   The walk passes over anything a file system reads as `.git` (below), so git's directory, or the
+   `.git` file of a worktree or submodule, is never owned and never deleted as stale.
 2. The directories are created, and every file is staged as a temporary file (`.jpack-emit-*`) in
    its directory. A file whose directory is held by a stale file is staged beside that file. A
-   failure here leaves every owned file as it was.
+   file whose directory is held by a file no owns glob matches refuses the run (`EMIT-WRITE`)
+   before anything is staged or deleted. A failure here leaves every owned file as it was.
 3. The stale owned files are deleted, and the directories they held are created.
 4. Every staged file is renamed into place.
+
+Only a regular file an owns glob matches is ever deleted as stale. The tests hold both guards,
+the walk's owns check and the unowned-blocker check, with a manifest of `gen/*.sql` and
+`gen/*/b` beside unowned files in and above `gen`.
 
 The report lists what was written and deleted. A failure on the way is `EMIT-WRITE`, at the path;
 the staged files are removed, and what was already deleted or renamed is reported. The run is not
@@ -186,12 +194,14 @@ leave host refusals uncoded until "the first host's rows". This runtime adds the
 3. The determinism list leaves out "randomness". The host does not check determinism; the harness
    will.
 4. The response's three members are all required. The companion lists `diagnostics` without
-   "optional", so a response that leaves it out is refused.
+   "optional", so a response that leaves it out is refused (`EMIT-RESPONSE` at `/diagnostics`); it
+   may be empty.
 
 **Readings this runtime makes** where the text is silent:
 
-- `**` matches any number of segments, zero included, so `gen/**` also owns a file named `gen`.
-  This differs from a gitignore pattern.
+- A trailing `**` matches one or more segments, as in gitignore, so `gen/**` never owns a file
+  named `gen`. A `**` in the middle matches zero or more, so `a/**/b` matches `a/b`. (Answered in
+  review; the companion should say so.)
 - `*` matches within one segment, a leading `.` included.
 - A caret range on `0.x` keeps the leftmost non-zero part, as npm and Cargo do. A pre-release kind
   version is in no range.
@@ -204,13 +214,44 @@ leave host refusals uncoded until "the first host's rows". This runtime adds the
   any segment (a drive or an NTFS stream), a segment ending in `.` or a space, and a reserved device
   name (`CON`, `PRN`, `AUX`, `NUL`, `COM1`–`COM9`, `LPT1`–`LPT9`) in any case, with or without an
   extension. The same rules hold for owns globs.
-- Git's directory is never owned. A bare `**` owns the whole repository, so stale deletion would
-  remove every file the emitter does not answer with; a manifest that gives it is refused. An owns
-  glob or response path with a `.git` segment is refused, in any case, since a case-insensitive file
-  system reads `.GIT` as `.git`. A glob such as `*/**` can still match a path below `.git`, so the
-  walk of the owned paths never enters it either. Decided here; the RFC is silent.
+- An owns glob's first segment is a literal name, with no `*`. A glob such as `**`, `**/*`,
+  `**/**`, `*/**` or `*` owns files across the whole repository, so stale deletion would remove
+  every one the emitter does not answer with; a manifest that gives one is refused. Testing the
+  first segment, not the glob's text, refuses every spelling of "everything" at once. Decided here;
+  the RFC is silent.
+- Git's directory is never owned. An owns glob or response path is refused when any segment is one
+  a file system reads as `.git`, by git's own two checks, which git applies to the paths it checks
+  out under `core.protectNTFS` and `core.protectHFS`:
+  - `is_ntfs_dotgit` (git's `path.c`): `.git` or its 8.3 short name `git~1`, in ASCII case,
+    followed only by dots and spaces up to the end or a `:` that starts a stream name, so
+    `GIT~1`, `.git. ` and `.git::$INDEX_ALLOCATION` are `.git`;
+  - `is_hfs_dotgit` (git's `utf8.c`): `.git` in ASCII case once the code points `next_hfs_char`
+    skips are removed (U+200C–U+200F, U+202A–U+202E, U+206A–U+206F and U+FEFF, Apple's TN1150
+    list), so `.g` U+200C `it` is `.git`.
+
+  Both are made on every system, as the other path rules are. A glob such as `gen/**` can still
+  match a path below a nested `.git`, so the walk of the owned paths never enters a name either
+  check reads as `.git`. The tests cite git's `t1014-read-tree-confusing.sh` cases. Decided here;
+  the RFC is silent.
 - No argument of `command` may be absolute or hold a `..` segment.
 - Emitter codes follow `^x-[a-z0-9]+(-[a-z0-9]+)*$`, at most 64 bytes.
+- An emitter diagnostic's location is resolved against the request it answers, because a
+  location's form alone lets free text through: a 512-byte pointer of any tokens, and an entry id,
+  environment or digest of the right grammar. Each member must name something in the request:
+  - an `environment` is one the request holds; a request of one environment is read as naming it
+    when the location names none;
+  - a `kind` is one the request pins, and a `kindDocument` is the digest of one (of that kind,
+    when both are given);
+  - an `entry` is one of the request's entries, of the location's kind when it names one, in the
+    location's environment. A request of several environments (`"all"`) must name it;
+  - the `pointer` names an existing position in that entry's value, or, with no entry, is `""`;
+  - in the facts-contracts form there is no environment, kind name or entry. A `kindDocument` is
+    the digest of a kind a contract was made from, and the pointer names a position in the
+    request's `factsContracts` array, its first token the contract's index;
+  - nothing in a request is YAML, so a location with a `line` or `column` is refused.
+
+  The request is read once, at the first diagnostic, and each location then costs map lookups
+  and one walk of its pointer, so the check is linear in the request and the diagnostics.
 - An unreadable input exits 2, where the registry commands exit 4, because RFC 0036 §4 fixes the
   host's exit codes.
 
@@ -235,9 +276,11 @@ leave host refusals uncoded until "the first host's rows". This runtime adds the
   (proposed).
 - ADR-0093 (the registry reader), ADR-0095 (facts contracts).
 - Open questions for the spec:
-  1. Should `**` match zero segments at the end of a glob?
-  2. Is `diagnostics` optional?
+  1. Should `**` match zero segments at the end of a glob? Answered: no (one or more, as in
+     gitignore); in the middle, yes.
+  2. Is `diagnostics` optional? Answered: no. It is required and may be empty, as the companion's
+     three-member response has it; the spec should say "required".
   3. How strict should the normalization rule be?
   4. What do modes mean on Windows?
-- Decided here, for the companion to confirm: owns globs that name `.git`, and a bare `**`, are
-  refused, and the walk never enters `.git` (see the readings above).
+- Decided here, for the companion to confirm: owns globs that name `.git`, and globs whose first
+  segment holds a `*`, are refused, and the walk never enters `.git` (see the readings above).

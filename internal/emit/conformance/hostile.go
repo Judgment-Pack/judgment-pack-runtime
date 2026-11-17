@@ -14,8 +14,8 @@ import (
 // it substitutes for an emitter's, each breaking one rule of §3, to confirm
 // that the host refuses each one. They go through emit.ParseResponse, the
 // step emit.Run applies to an emitter's standard output, for a fixed manifest
-// of its own that owns gen/**, so they are the same whatever the emitter
-// under test is. Each is a row of its own, which passes when the host
+// of its own that owns gen/** and a fixed request it answers, so they are the
+// same whatever the emitter under test is. Each is a row of its own, which passes when the host
 // refuses the response with EMIT-RESPONSE at the pointer the hostile names.
 
 // hostileManifestSource is the manifest the hostile responses answer.
@@ -24,6 +24,16 @@ const hostileManifestSource = `{"emitterManifestVersion":"1.0.0","id":"https://e
 
 // hostileRequestVersion is the request version the hostile responses answer.
 const hostileRequestVersion = "1.0.0"
+
+// hostileRequest is the request the hostile responses answer, which an
+// emitter diagnostic's location is resolved against: one environment, dev,
+// with one kind, queue, and one entry, queue/orders.
+const hostileRequest = `{"emitRequestVersion":"1.0.0","emitter":{"id":"https://example.invalid/jpack-harness/hostile","version":"1.0.0"},"options":{},` +
+	`"resolved":[{"environment":"dev","registry":{"digest":"sha256:` + zeros + `"},` +
+	`"kinds":[{"digest":"sha256:` + zeros + `","id":"https://example.invalid/jpack-harness/kinds/queue","kind":"queue","version":"1.0.0"}],` +
+	`"entries":[{"id":"orders","kind":"queue","owner":"jpack-harness","value":{"retention":3}}]}]}`
+
+const zeros = "0000000000000000000000000000000000000000000000000000000000000000"
 
 var hostileManifest = sync.OnceValue(func() *emit.Manifest {
 	m, diagnostics := emit.ReadManifest([]byte(hostileManifestSource))
@@ -107,7 +117,7 @@ func hostileRows() []Row {
 	rows := make([]Row, 0, len(hostiles))
 	for _, h := range hostiles {
 		row := Row{Vector: "hostile/" + h.name, Check: checkPathSafety, Name: checkNames[checkPathSafety], Expected: "EMIT-RESPONSE"}
-		response, findings := emit.ParseResponse(h.response(), hostileRequestVersion, m)
+		response, findings := emit.ParseResponse(h.response(), hostileRequestVersion, []byte(hostileRequest), m)
 		refused := false
 		for _, d := range findings {
 			refused = refused || d.Code == "EMIT-RESPONSE" && d.Location.Pointer == h.pointer

@@ -26,8 +26,8 @@ type File struct {
 }
 
 // EmitterDiagnostic is one diagnostic an emitter reported, validated: an
-// x- code, a severity and a location of the companion's §7.3 form. It never
-// carries a value.
+// x- code, a severity and a location of the companion's §7.3 form that names
+// only what the request holds. It never carries a value.
 type EmitterDiagnostic struct {
 	Environment string            `json:"environment,omitempty"`
 	Severity    string            `json:"severity"`
@@ -64,10 +64,13 @@ var (
 // base64, at most MaxFileBytes, and a mode of 0644 or 0755; paths in strictly
 // increasing code-point order and unique once case is folded and
 // normalized, none of them a directory of another; and diagnostics of their
-// form. An error diagnostic fails it. It returns the response and nothing, or the response's diagnostics (when
-// they could be read) and the EMIT-RESPONSE findings, each at a pointer into
-// the response and never with a value from it.
-func ParseResponse(data []byte, request string, m *Manifest) (*Response, []Diagnostic) {
+// form, each location resolved against request, the request's bytes
+// (requestIndex.resolves). An error diagnostic fails it. It returns the
+// response and nothing, or the response's diagnostics (when they could be
+// read) and the EMIT-RESPONSE findings, each at a pointer into the response
+// and never with a value from it. A diagnostic whose location does not
+// resolve is a finding and is not returned.
+func ParseResponse(data []byte, requestVersion string, request []byte, m *Manifest) (*Response, []Diagnostic) {
 	var findings []Diagnostic
 	fail := func(path ...string) {
 		findings = append(findings, diagnostic("EMIT-RESPONSE", Location{Document: DocumentResponse, Pointer: carrier.Pointer(path)}))
@@ -98,7 +101,7 @@ func ParseResponse(data []byte, request string, m *Manifest) (*Response, []Diagn
 	}
 	response := &Response{}
 	response.Version, _ = root["emitResponseVersion"].(string)
-	if _, present := root["emitResponseVersion"]; present && !acceptedResponse(response.Version, request) {
+	if _, present := root["emitResponseVersion"]; present && !acceptedResponse(response.Version, requestVersion) {
 		fail("emitResponseVersion")
 	}
 
@@ -135,6 +138,14 @@ func ParseResponse(data []byte, request string, m *Manifest) (*Response, []Diagn
 			fail("diagnostics")
 		}
 	}
+	// The request is read once, at the first location to resolve.
+	var index *requestIndex
+	resolves := func(location registry.Location) bool {
+		if index == nil {
+			index = indexRequest(request)
+		}
+		return index.resolves(location)
+	}
 	for i, item := range rawDiagnostics {
 		at := strconv.Itoa(i)
 		object, ok := item.(map[string]any)
@@ -160,6 +171,8 @@ func ParseResponse(data []byte, request string, m *Manifest) (*Response, []Diagn
 		case !locationOK:
 			fail("diagnostics", at, "location")
 		case bad:
+		case !resolves(location):
+			fail("diagnostics", at, "location")
 		default:
 			response.Diagnostics = append(response.Diagnostics, EmitterDiagnostic{Severity: severity, Code: code, Location: location})
 			if severity == SeverityError {

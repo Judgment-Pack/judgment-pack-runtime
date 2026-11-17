@@ -121,3 +121,48 @@ func TestEmitRefusalsAndInvocation(t *testing.T) {
 		t.Fatalf("a refused run wrote: %v", err)
 	}
 }
+
+// An emitter diagnostic whose location names nothing in the request refuses
+// the run, and none of its text reaches standard output or standard error,
+// even with the emitter's standard error passed through.
+func TestEmitDoesNotCopyALocationTheRequestDoesNotHold(t *testing.T) {
+	registryPath, kindPath := writeRegistryFiles(t, cliRegistry(t, "14"))
+	root, _ := emitRepo(t)
+	const freeText = "/vault-ref=projects~1acme~1secrets~1db-password"
+	response := `{"emitResponseVersion":"1.0.0","files":[],"diagnostics":[{"severity":"warning","code":"x-a",` +
+		`"location":{"document":"value","entry":{"kind":"queue","id":"not-in-the-request"},"environment":"prod","pointer":"` + freeText + `"}}]}`
+	command := "bin/emitter"
+	if runtime.GOOS == "windows" {
+		command += ".exe"
+	}
+	manifest, err := json.Marshal(map[string]any{
+		"emitterManifestVersion": "1.0.0", "id": "https://example.invalid/emitters/cli-test", "version": "1.0.0", "owner": "platform",
+		"reads":           []any{map[string]any{"kind": "queue", "id": "https://example.invalid/kinds/queue", "versions": "^1.0.0"}},
+		"requestVersions": []any{"1.0.0"}, "environments": "all",
+		"command": []any{command, emittest.Switch, "echo", "fixtures/response.json"}, "owns": []any{"gen/**"},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	manifestPath := filepath.Join(root, "tools", "echo.json")
+	for path, data := range map[string][]byte{manifestPath: manifest, filepath.Join(root, "fixtures", "response.json"): []byte(response)} {
+		if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(path, data, 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+	for _, extra := range [][]string{nil, {"--check"}, {"--emitter-stderr"}} {
+		args := append([]string{"emit", "--manifest", manifestPath, "--registry", registryPath, "--kinds", kindPath, "--root", root}, extra...)
+		code, out, stderr := runTest(t, args, "")
+		if code != 2 || !strings.Contains(out, `"code":"EMIT-RESPONSE"`) || !strings.Contains(out, `"pointer":"/diagnostics/0/location"`) {
+			t.Fatalf("%v: %d %q", extra, code, out)
+		}
+		for _, text := range []string{"vault-ref", "acme", "db-password", "not-in-the-request"} {
+			if strings.Contains(out, text) || strings.Contains(stderr, text) {
+				t.Fatalf("%v: %q reached the output: %q %q", extra, text, out, stderr)
+			}
+		}
+	}
+}
