@@ -2,6 +2,27 @@
 
 All notable changes to tagged releases are documented here.
 
+## Unreleased
+
+- **`jpack terraform facts`: a plan's or a state's resources as a facts batch** (ADR-0097
+  amendment). It is spec RFC 0038 §6's batch tool. `jpack terraform facts (--plan FILE | --state
+  FILE) --type T[,T...]` reads the output of `terraform show -json` through the
+  `internal/terraformfile` reader, with every value marked sensitive removed before selection. It
+  writes one line per selected resource, sorted by address:
+  `{"facts":{"resource":<the §5 object>,"terraform":{"document","formatVersion","sha256"}},"id":"<address>"}`,
+  RFC 8785 canonical, the line `registry facts` writes. `--mode`, `--address`, `--actions` (plan
+  only), `--max` and `--max-bytes` are the source's `select` and `maxBytes` members. A refused file
+  writes no line, and writes only its code, sha256, size and fixed message to standard error, then
+  exits 2. An unusable command line exits 3, and an unreadable file exits 4. `jpack dialect
+  validate` does not admit the `terraform-file` kind yet. Existing commands and their output are
+  unchanged, and the conformance claim in CONFORMANCE.md is unchanged.
+- **The Terraform reader writes numbers without building them first** (ADR-0097). Each number's
+  normal form was built as a string three times: when the selection was checked, when the value
+  was counted, and when it was written. It is now measured, and then written straight into the
+  value. The bytes are unchanged. A new test reads a file of `1e63` values, which grow about 13.4
+  times in the normal form, so the value's bound of 16 times its file cannot be lowered past them
+  unnoticed.
+
 ## 0.47.0 - 2026-11-16
 
 - **A reader for Terraform plan and state JSON** (ADR-0097, proposed). Package

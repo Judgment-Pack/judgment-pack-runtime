@@ -245,7 +245,8 @@ The rest are this runtime's own readings:
 17. **Mapping a refusal to a source outcome** (dialect §9.2) is left open by the companion. This
     package returns the refusal, and the caller maps it.
 
-**Not built:** `jpack terraform facts` and the batch of §6, the kind in `jpack dialect validate`,
+**Not built:** `jpack terraform facts` and the batch of §6 (since built, see the amendment), the
+kind in `jpack dialect validate`,
 outputs (RFC 0038, Unresolved question 4), and OpenTofu (Unresolved question 3).
 
 ### Consequences
@@ -266,3 +267,51 @@ outputs (RFC 0038, Unresolved question 4), and OpenTofu (Unresolved question 3).
 Spec RFC 0038 (accepted 2026-11-16), §2 to §5; the proposed companion text, `spec/dialect.md` §4.5.
 `internal/terraformfile`. ADR-0095 for the number normal form, and as the precedent for a runtime
 code where the RFC names none.
+
+## Amendment: the batch tool, `jpack terraform facts` (2026-11-16)
+
+RFC 0038 §6 gives the runtime a batch tool: one evaluation per resource, not one over the whole
+plan. It is built as a command over the reader, and the reader's steps are unchanged.
+
+```
+jpack terraform facts (--plan FILE | --state FILE) --type T[,T...] [--mode managed|data]
+  [--address PATTERN] [--actions a,b] [--max N] [--max-bytes N]
+```
+
+- **The flags are the source's members.** `--plan` or `--state` names the `document` and the file.
+  `--type`, `--mode`, `--address`, `--actions` and `--max` fill `select`, and `--max-bytes` fills
+  `maxBytes`, with RFC 0038 §1 and §4's forms: 1 to 64 distinct types, `--actions` with `--plan`
+  only and from `create`, `update`, `delete`, `read` and `no-op`, `--max` from 1 to 10000
+  (default 1000), and `--max-bytes` from 1 to 268435456 (default 67108864). A flag that breaks a
+  rule is an unusable command line (exit 3), never a refusal of the file, because a malformed
+  source makes the dialect invalid and not the file (§4). An empty `--address` or `--actions`
+  would select nothing, so each is refused as a mistake rather than read as a source that selects
+  nothing.
+- **The file is read by the reader**, from a regular file or standard input (`-`). The reader
+  holds it to `maxBytes` as it reads, and keeps nothing past it.
+- **One line per selected resource**, in the acquired value's order (by address):
+  `{"facts":{"resource":<the §5 object>,"terraform":{"document","formatVersion","sha256"}},"id":"<address>"}`.
+  This is RFC 8785 canonical, the line shape of `registry facts` (ADR-0095). `sha256` is the
+  file's bare lower-case hex, as in the acquisition record.
+- **Nothing is written unless every line can be.** A refusal writes no line on standard output. On
+  standard error it writes the refusal's canonical JSON alone: code, sha256, size and the code's
+  fixed message. It never writes a value, a member name, a pointer or the path. The exit code is
+  2, the "could not judge" that `registry facts` uses for an invalid registry (ADR-0092). A
+  selection that matches nothing is an empty batch and exit 0, since "no database is destroyed"
+  is a valid fact (§4). A file that cannot be opened or read, or a batch that cannot be written,
+  exits 4.
+- **`*` never crosses `.`, `[` or `]`** (§4). So `module.*.google_sql_user.*` matches
+  `module.db.google_sql_user.app` but not a counted module (`module.db[0]...`) or a counted
+  instance (`...app[0]`). Those need `[*]`, as in `module.*[*].google_sql_user.*[*]`.
+
+```
+jpack terraform facts --plan plan.json --type google_sql_user --actions delete,update > changes.jsonl
+jpack experimental evaluate --pack-id sql-user-change --batch changes.jsonl --format json --require-outcome allowed
+```
+
+The pack reads `/resource/actions`, `/resource/before/...` and `/resource/after/...` for a plan,
+and `/resource/values/...` for a state. A value marked sensitive, or known only after apply, is
+absent, so a rule that reads it meets `unknown`.
+
+**Not built:** the kind in `jpack dialect validate`, which waits on the dialect version the kind
+joins (RFC 0038, Unresolved question 1).
