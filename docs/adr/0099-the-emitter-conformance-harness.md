@@ -427,6 +427,16 @@ holds.
 - The index is not of a form the reader reads: another version, an entry or path that is
   malformed, a mode that is not a file, a link or a submodule, an extended flag it does not know,
   or entries out of git's order.
+- Git may read another index or working tree for `--root`: the environment holds `GIT_INDEX_FILE`,
+  `GIT_DIR` or `GIT_WORK_TREE`, `.git/config` holds `worktree` or `include` anywhere, in any case,
+  or `.git/config.worktree` exists (amended 2026-11-17, #468). Before, such a repository was read
+  as its `.git/index` gave it, which may omit a tracked link: a stale `.git/index` beside the index
+  git really reads could lack a path git tracks. The config is not parsed: git allows several
+  section headers on one line, so `[x] [core] worktree = d` sets `core.worktree`, and any mention
+  of either word, `core.worktree`, `extensions.worktreeConfig`, `include` and `includeIf` among
+  them, is refused, whatever it means. A config that is not a regular file or cannot be read is
+  refused too, and one that is missing is read as empty; a `config.worktree` that cannot be checked
+  is refused.
 - The index holds an extension whose signature does not begin with `A` to `Z`. Git requires a
   reader to understand such an extension, and the reader understands none. Two change the set of
   paths the entries give: a split index (`link`), whose entries are in another file, and a sparse
@@ -462,9 +472,6 @@ that no rule ignores would still be the repository's content to that reading.
 
 **Known limits.**
 
-- A repository whose `.git` directory names another working tree (`core.worktree`), or whose
-  index git reads from elsewhere (`GIT_INDEX_FILE`), is read as its `.git/index` gives it. The
-  harness does not read git's configuration.
 - An index git wrote without its checksum (`index.skipHash`, which `feature.manyFiles` turns on)
   ends in zeros, which do not match, so every link that leads out is refused there.
 - A fresh repository has no index file until something is added, so every link that leads out is
@@ -475,3 +482,15 @@ that no rule ignores would still be the repository's content to that reading.
   remove it, make it relative and inside `--root`, or track what it holds.
 
 `EMIT-LINK-OMITTED` is this runtime's, and provisional (VERSIONING.md).
+
+## Amendment: `--update` gates its write (2026-11-17, #468)
+
+`--update` replaces each vector's `expected/` between `Options.BeginWrite` and `Options.EndWrite`,
+the gate `jpack emit` puts around its own write (ADR-0098). `BeginWrite` is asked just before the
+replacement, once the run's context is seen not done: an interrupt or `SIGTERM` that came before
+it refuses the run at that vector with `EMIT-INTERRUPTED` and leaves its `expected/` untouched.
+Once the replacement has begun, a second signal waits until it ends, so `expected/` is never left
+missing between its two renames; the run is then refused as interrupted, and the vector's check 1
+row still says `expected/` was written. `EndWrite` ends the gate after each replacement, so a
+signal between two vectors is acted on, and a second one ends `jpack` again. An expected-failure
+vector is still never touched.

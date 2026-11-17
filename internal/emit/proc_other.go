@@ -20,6 +20,15 @@ func killProcessGroup(process *os.Process) error {
 	return process.Kill()
 }
 
+// endedByKill says whether the emitter's exit code is the one Process.Kill
+// leaves (1, as TerminateProcess is given). Kill reaches only a process not
+// yet waited for, so the kill is not sent once Wait has seen the emitter
+// exit; an emitter that exits 1 by itself as the kill is sent cannot be told
+// from one the kill ended.
+func endedByKill(state *os.ProcessState) bool {
+	return state.ExitCode() == 1
+}
+
 // endProcessGroup does nothing: the emitter has exited, and what it started
 // cannot be found without process groups.
 func endProcessGroup(*os.Process) {}
