@@ -301,9 +301,9 @@ Each list is bounded at 1000. The report's own diagnostics give why it could not
 **Codes.**
 
 - `EMIT-STRAY-WRITE` is the companion's.
-- `EMIT-VECTOR` (the layout) and `EMIT-HARNESS-BOUND` (a check that could not be completed) are
-  this runtime's, and provisional, as is the warning `EMIT-LINK-OMITTED` (a link left out of the
-  copy), by the amendment below.
+- `EMIT-VECTOR` (the layout) and `EMIT-HARNESS-BOUND` (a check that could not be completed) were
+  this runtime's, and provisional, as was the warning `EMIT-LINK-OMITTED` (a link left out of the
+  copy), by the amendment below. The companion's §12 (proposed) now lists all three.
 - An `--update` that cannot write is `EMIT-WRITE` on the vector, and the run exits 2.
 
 ### Consequences
@@ -490,7 +490,7 @@ that no rule ignores would still be the repository's content to that reading.
   run then differs from a run in the repository. The warning names the link, so the author can
   remove it, make it relative and inside `--root`, or track what it holds.
 
-`EMIT-LINK-OMITTED` is this runtime's, and provisional (VERSIONING.md).
+`EMIT-LINK-OMITTED` is the companion's now (§12, proposed), and provisional (VERSIONING.md).
 
 ## Amendment: `--update` gates its write (2026-11-17, #468)
 

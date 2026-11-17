@@ -20,6 +20,28 @@ All notable changes to tagged releases are documented here.
   It now refuses the run with `EMIT-INTERRUPTED` at `/command`, as `jpack emit` does before its
   write. ADR-0098 now also states that an interrupt once the write has begun leaves the outcome
   `written`, exit 0. The conformance claim in CONFORMANCE.md is unchanged.
+- **Who owns each registry-line code, as the companions now say** (VERSIONING.md). The registry
+  companion's code list names every `REG-*` code this runtime reports, the `REG-YAML-*` codes,
+  `REG-REPORT-TRUNCATED`, `REG-KIND-PATTERN-LIMIT` and `REG-BOUND-VALIDATION-WORK` among them, the
+  `FACTS-*` limit, form and order codes, `FACTS-ID-LIMIT` and `EMIT-MANIFEST`, and the thirteen
+  host and harness codes this runtime reported as its own, under their names and severities:
+  `EMIT-OWNS-OVERLAP`, `EMIT-KIND-ID`, `EMIT-OPTIONS`, `EMIT-LINK`, `EMIT-PATH-UNREADABLE`,
+  `EMIT-WRITE`, `EMIT-INTERRUPTED`, `EMIT-VECTOR`, `EMIT-HARNESS-BOUND` and the warnings
+  `EMIT-ENV-UNSET`, `EMIT-REPORT-TRUNCATED`, `EMIT-STAGING-LEFTOVER` and `EMIT-LINK-OMITTED`. The
+  dialect companion names `TF-VALUE-LIMIT` with the other `TF-*` codes, makes `terraform-file` a
+  proposed kind of dialect version 3, takes the table this runtime names `proposed-1` as its first,
+  and has each of its rows backed by vectors written by hand. VERSIONING.md called these codes this
+  runtime's own; it now pins the registry companion's first release, `registry-v1.0.0`, published
+  as released and not yet stable, whose code list names them. The `TF-*` codes stay provisional
+  until a spec release carries dialect §4.5. No code, severity, message or behaviour changes; the thirteen and `FACTS-ID-LIMIT` are no longer marked provisional in the source and the
+  mutation table: for the `EMIT-*` codes and `FACTS-ID-LIMIT`, that marking now says who named a
+  code, the companion or this runtime, and not whether its companion is released. VERSIONING.md
+  also states that `jpack-emit-go-facts`' refusal of open objects, `anyOf` and mixed `*` objects is
+  first-version scope and may be lifted in 1.x, and SECURITY.md points to the registry line's
+  support window. `jpack terraform facts` and the `terraform-file` reader leave the registry
+  line: no spec release carries dialect §4.5 yet, so the command, its batch lines, the `TF-*`
+  codes and the `proposed-1` table stay provisional and outside the line's 1.0 promise. The
+  conformance claim in CONFORMANCE.md is unchanged.
 
 ## 0.50.0 - 2026-11-17
 

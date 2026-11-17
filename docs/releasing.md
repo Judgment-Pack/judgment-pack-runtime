@@ -210,6 +210,11 @@ goreleaser release --snapshot --clean
 Inspect `dist/checksums.txt`, all six platform archives, their license files, and one extracted
 binary. A release build must report the tag version without the leading `v`.
 
+`tools/check-release`, run from the repository root, also refuses a release while `VERSIONING.md`,
+`CHANGELOG.md`, `SECURITY.md` or any file under `docs/` holds a placeholder marker: an HTML comment
+opened by the word `PLACEHOLDER` and a parenthesis, left where the text waits for a tag that does
+not exist yet. Settle the text, then remove the marker.
+
 ## Create the release
 
 1. Move the changelog entries from `Unreleased` to the intended version and date. In

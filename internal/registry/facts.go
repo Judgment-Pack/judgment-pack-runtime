@@ -29,8 +29,8 @@ const (
 
 // FactsCodes is the closed list of codes the facts commands report, with
 // each one's severity and fixed message. RFC 0037 §5 names the three
-// FACTS-*-advisories; the others are this runtime's (ADR-0095), for cases the
-// RFC names no code for.
+// FACTS-*-advisories; the registry companion's §12 names the others, which
+// ADR-0095 added for cases the RFC names no code for.
 var FactsCodes = map[string]codeInfo{
 	"FACTS-POINTER-UNKNOWN":   {SeverityWarning, "The pack reads a fact pointer the facts contract does not list."},
 	"FACTS-TYPE-ORDERED":      {SeverityWarning, "The pack uses an ordered comparison on a fact pointer that the contract does not type decimal."},

@@ -207,6 +207,8 @@ leave host refusals uncoded until "the first host's rows". This runtime adds the
 - Warnings: `EMIT-ENV-UNSET`, `EMIT-REPORT-TRUNCATED` and, by the amendment below,
   `EMIT-STAGING-LEFTOVER`.
 
+The companion's §12 (proposed) now lists every one of these under its name and severity.
+
 `EMIT-STRAY-WRITE` belongs to the harness.
 
 **Where the companion and RFC 0036 differ**, the companion governs:
