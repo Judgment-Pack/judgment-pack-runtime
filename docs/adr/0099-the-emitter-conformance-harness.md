@@ -95,9 +95,11 @@ The two inputs are formed differently:
   registry and its kinds, each read under the host's bounds. An oversize options document is
   `EMIT-OPTIONS`, as the host reports it.
 - **A given request** is held to the envelope the host writes for the manifest, then written in
-  its canonical form. The envelope is: exactly the four members, the request version the host
-  writes, the manifest's emitter, options valid against its schema, the input member as an array,
-  and one environment for `resolved` with `each`. What the request carries inside is the author's.
+  its canonical form. The envelope is: exactly the five members of the resolved form
+  (`declarations` among them, an array) or the four of the facts form, the request version the
+  host writes, the manifest's emitter, options valid against its schema, the input member as an
+  array, and one environment for `resolved` with `each`. What the request carries inside is the
+  author's, a declaration that does not match its pin included (ADR-0101).
 
 `DIR/harness.json` is exactly `{"harnessLevel": LEVEL}`. Without it the level is `1.0`, and an
 unknown level is `EMIT-VECTOR` and exit 2.
@@ -153,7 +155,9 @@ the registry's order rules require. With those added, it forms each request agai
 the facts form. It then restores every `registry.digest` in the changed request to the original
 request's value at the same place. That place is `/resolved/N/registry/digest` and, in the facts
 form, a contract's `source.registry.digest` if a source carries one. Next it asserts that the result
-is byte-identical to the original request. A difference fails the row. The reason says whether the
+is byte-identical to the original request. In the resolved form that includes `declarations`, in
+which nothing is restored, so the synthetic kind's declaration must not be there (ADR-0101). A
+difference fails the row. The reason says whether the
 request holds the synthetic kind's id. Only then does the harness run the emitter again and assert
 that the response is unchanged. That run is on the original request's bytes: the restored bytes are
 those bytes exactly, or the row has already failed. So the byte comparison is what tests that no

@@ -536,7 +536,7 @@ func TestHostileRowFailsWhenTheHostAccepts(t *testing.T) {
 func TestGivenRequest(t *testing.T) {
 	f := newFixture(t)
 	m := f.manifest(requestMode, map[string]any{"environments": "all"})
-	request := `{"emitRequestVersion":"1.0.0","emitter":{"id":"https://example.invalid/emitters/test","version":"1.0.0"},"options":{},"resolved":[]}`
+	request := `{"declarations":[],"emitRequestVersion":"1.0.0","emitter":{"id":"https://example.invalid/emitters/test","version":"1.0.0"},"options":{},"resolved":[]}`
 	write(t, f.vectors, map[string]string{
 		"given/request.json":                  request,
 		"wrong-emitter/request.json":          strings.Replace(request, "emitters/test", "emitters/other", 1),

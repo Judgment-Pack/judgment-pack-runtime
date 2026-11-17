@@ -124,6 +124,18 @@ All notable changes to tagged releases are documented here.
   standard error. Its vectors are in RFC 0036 §5's layout, and the output of one vector is compiled
   and tested as a package. No `jpack` command changes. The conformance claim in CONFORMANCE.md is
   unchanged.
+- **A resolved-form emit request carries the read kinds' declarations** (ADR-0101, proposed;
+  registry companion §11.2, spec #352). `jpack emit` now writes
+  `{"emitRequestVersion", "emitter", "options", "declarations", "resolved"}` in the resolved form.
+  `declarations` holds the declaration of each kind the manifest reads, exactly as validation
+  admitted it, in RFC 8785 form and sorted by `kind`, once per request with `"all"` as with
+  `"each"`. The SHA-256 of each one is its pin's `digest`. A kind the manifest does not read is not
+  among them. The host refuses a run whose pins and declarations do not match one to one
+  (`EMIT-REQUEST`) before any emitter starts. The facts-contracts form is unchanged. This is part
+  of request `1.0.0`, which no tagged release has held yet, so `emitRequestVersion` stays `1.0.0`.
+  `jpack emit conformance` holds a given resolved-form `request.json` to these five members, and
+  check 4 requires `declarations` to be byte-identical with the synthetic kind added. The golden
+  vectors were written again with `--update`. The conformance claim in CONFORMANCE.md is unchanged.
 
 ## 0.47.0 - 2026-11-16
 
