@@ -181,7 +181,9 @@ All notable changes to tagged releases are documented here.
     run, with exit 2; before, the row was dropped.
   - `jpack emit conformance --update` writes a vector's new `expected/` whole in a temporary
     directory beside it and renames it into place, so a write that fails partway leaves
-    `expected/` as it was. Before, it removed `expected/` first and could leave it partial.
+    `expected/` as it was. Before, it removed `expected/` first and could leave it partial. When
+    the new one cannot be renamed in and the old one cannot be put back, the temporary directory
+    holding the old one is kept and named in the error.
   - `jpack emit conformance` lists the vectors directory and each vector's `kinds/` by batches
     and stops once past the bound (1000 vectors, 1024 kind files), rather than listing either
     whole before the bound was checked. The bounds and their codes are unchanged.

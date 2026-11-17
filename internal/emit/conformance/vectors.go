@@ -2,6 +2,7 @@ package conformance
 
 import (
 	"errors"
+	"fmt"
 	"io"
 	"io/fs"
 	"os"
@@ -589,24 +590,38 @@ func writeExpected(dir string, files []emit.File) error {
 	if err != nil {
 		return err
 	}
-	defer removeTree(work)
+	// When the old expected/ cannot be put back, the temporary directory
+	// still holds it, so it is kept and named: the vector is refused until
+	// it is removed, and the old files are not lost.
+	keep := false
+	defer func() {
+		if !keep {
+			removeTree(work)
+		}
+	}()
 	fresh, old := filepath.Join(work, "new"), filepath.Join(work, "old")
 	if err := fillExpected(fresh, files); err != nil {
 		return err
 	}
 	if existed {
-		if err := os.Rename(target, old); err != nil {
+		if err := rename(target, old); err != nil {
 			return err
 		}
 	}
-	if err := os.Rename(fresh, target); err != nil {
+	if err := rename(fresh, target); err != nil {
 		if existed {
-			err = errors.Join(err, os.Rename(old, target))
+			if restore := rename(old, target); restore != nil {
+				keep = true
+				return fmt.Errorf("conformance: expected/ could not be replaced or put back; the old one is kept in %s: %w", old, errors.Join(err, restore))
+			}
 		}
 		return err
 	}
 	return nil
 }
+
+// rename is os.Rename, replaced in tests to make a rename fail.
+var rename = os.Rename
 
 // expectedUpdatePrefix names the temporary directory --update writes a new
 // expected/ in, beside it. One left by a run that was stopped is not of the

@@ -5,6 +5,7 @@ import (
 	"path/filepath"
 	"slices"
 	"strconv"
+	"strings"
 	"testing"
 
 	"github.com/Judgment-Pack/judgment-pack-runtime/internal/emit"
@@ -88,5 +89,44 @@ func TestListingsAreBounded(t *testing.T) {
 	write(t, filepath.Join(f.vectors, "c"), map[string]string{"kinds/extra.json": "{}"})
 	if _, refused := readVectors(f.vectors, false); len(refused) != 1 || refused[0].Code != "EMIT-VECTOR" || refused[0].Location.Path != "c/kinds" {
 		t.Fatalf("past the kinds' bound: %+v", refused)
+	}
+}
+
+// When expected/ can be neither replaced nor put back, --update keeps the
+// temporary directory that holds the old one, names it in the error, and the
+// vector's layout is refused until it is removed: the old files are not
+// lost.
+func TestUpdateKeepsTheOldExpectedWhenItCannotBePutBack(t *testing.T) {
+	parent := t.TempDir()
+	dir := filepath.Join(parent, "v")
+	write(t, dir, map[string]string{"request.json": "{}", "expected/gen/old": "old\n"})
+	target := filepath.Join(dir, "expected")
+	saved := rename
+	defer func() { rename = saved }()
+	rename = func(from, to string) error {
+		if to == target {
+			return os.ErrPermission
+		}
+		return saved(from, to)
+	}
+	err := writeExpected(dir, []emit.File{{Path: "gen/a", Data: []byte("a\n"), Mode: emit.ModeRegular}})
+	if err == nil {
+		t.Fatal("a failed replace and restore succeeded")
+	}
+	var kept string
+	for _, name := range vectorNames(t, dir) {
+		if strings.HasPrefix(name, expectedUpdatePrefix) {
+			kept = filepath.Join(dir, name)
+		}
+	}
+	if kept == "" || !strings.Contains(err.Error(), kept) {
+		t.Fatalf("the temporary directory was not kept and named: %v, %v", vectorNames(t, dir), err)
+	}
+	if data, err := os.ReadFile(filepath.Join(kept, "old", "gen", "old")); err != nil || string(data) != "old\n" {
+		t.Fatalf("the old expected/ is lost: %q %v", data, err)
+	}
+	rename = saved
+	if _, refused := layoutVector(dir, "v", false); len(refused) == 0 {
+		t.Fatal("a vector with the kept directory beside it was not refused")
 	}
 }

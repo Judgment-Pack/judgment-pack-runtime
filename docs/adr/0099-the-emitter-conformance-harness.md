@@ -113,9 +113,11 @@ unknown level is `EMIT-VECTOR` and exit 2.
 touches an expected-failure vector. It writes nowhere but `VECTOR/expected/`, which must be a
 directory or absent. The new `expected/` is written whole in a temporary directory in the
 vector, `.expected-update-*`, and renamed into place, and the old one is then removed, so a write
-that fails partway leaves `expected/` as it was. A run stopped between the renames can leave that
-directory, which the layout refuses as an unknown member until it is removed. A run that gives no files gets the
-marker `expected/~empty` alone, and a run that gives files has no marker. The vector directories
+that fails partway leaves `expected/` as it was. When the new one cannot be renamed into place and
+the old one cannot be put back, the temporary directory is kept, holding the old one, and the error
+names it. That directory, or one left by a run stopped between the renames, is refused by the layout
+as an unknown member until it is removed, so the old files are never lost. A run that gives no files
+gets the marker `expected/~empty` alone, and a run that gives files has no marker. The vector directories
 are not links.
 The checks then run against the new `expected/`.
 
