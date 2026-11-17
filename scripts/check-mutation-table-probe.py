@@ -8,6 +8,9 @@ import importlib.util
 import os
 import sys
 
+# The probe imports the check; it leaves no bytecode in the tree.
+sys.dont_write_bytecode = True
+
 spec = importlib.util.spec_from_file_location('check', os.path.join('scripts', 'check-mutation-table.py'))
 check = importlib.util.module_from_spec(spec)
 spec.loader.exec_module(check)
