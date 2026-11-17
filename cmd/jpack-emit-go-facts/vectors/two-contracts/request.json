@@ -1,0 +1,30 @@
+{
+  "emitRequestVersion": "1.0.0",
+  "emitter": { "id": "https://github.com/Judgment-Pack/judgment-pack-runtime/cmd/jpack-emit-go-facts", "version": "0.1.0" },
+  "options": { "package": "eventfacts", "directory": "generated/facts" },
+  "factsContracts": [
+    {
+      "factsContractVersion": "1.0.0",
+      "id": "https://example.invalid/contracts/service-call",
+      "version": "2.0.0",
+      "source": { "authored": true },
+      "facts": [
+        { "pointer": "/secret", "type": "object", "present": "always", "secretReference": true },
+        { "pointer": "/secret/scope", "type": "string", "present": "always" },
+        { "pointer": "/secret/store", "type": "string", "present": "always", "values": ["vault"] },
+        { "pointer": "/target", "type": "string", "present": "always", "values": ["api", "batch"] }
+      ]
+    },
+    {
+      "factsContractVersion": "1.0.0",
+      "id": "https://example.invalid/kinds/login-event",
+      "version": "1.0.0",
+      "source": { "kind": { "id": "https://example.invalid/kinds/login-event", "version": "1.0.0", "digest": "sha256:fedcba9876543210fedcba9876543210fedcba9876543210fedcba9876543210" } },
+      "facts": [
+        { "pointer": "/at", "type": "string", "present": "always" },
+        { "pointer": "/success", "type": "boolean", "present": "always" },
+        { "pointer": "/user", "type": "string", "present": "always" }
+      ]
+    }
+  ]
+}
