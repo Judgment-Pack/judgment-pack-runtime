@@ -2,7 +2,7 @@
 
 All notable changes to tagged releases are documented here.
 
-## Unreleased
+## 0.50.0 - 2026-11-17
 
 - **The registry line's support window** (VERSIONING.md, "The registry line"). Fixes land in the
   latest `jpack` minor and the latest `startup/v1` tag, as before. Security fixes will also be
