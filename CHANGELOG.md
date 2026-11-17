@@ -11,6 +11,16 @@ All notable changes to tagged releases are documented here.
   keeps working. It takes effect from the release that names the line stable, which settles every
   provisional code first and tags `startup/v1.0.0`. `jpack` and the
   runtime module stay 0.x. The conformance claim in CONFORMANCE.md is unchanged.
+- **Interrupts, bounds and start-up file checks** (ADR-0096, ADR-0103). `jpack emit conformance`
+  sent an interrupt or SIGTERM is refused with `EMIT-HARNESS-BOUND` and drops the interrupted
+  vector's rows, which would report failures the emitter did not cause. A second signal ends
+  `jpack`. `jpack emit` no longer starts the emitter with SIGPIPE ignored. A given `request.json`
+  is bounded by its canonical size, not only its size as written. A vector's directory and its
+  `expected/` are listed under a bound on their entries, directories included. The TypeScript
+  constants emitter counts its depth bound of 34 in containers only. In the start-up module,
+  `ReadFile` refuses a world-writable file under every rule, and `ReadResolvedFile` refuses a
+  file that is not regular without blocking on it. The conformance claim in CONFORMANCE.md is
+  unchanged.
 
 ## 0.48.0 - 2026-11-17
 

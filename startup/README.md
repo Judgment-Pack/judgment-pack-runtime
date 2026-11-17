@@ -70,8 +70,9 @@ secret's value, a secret reference, or a value from the document.
 | An environment variable that is not set | `ErrNotSet` |
 | A value that is empty once its trailing newline is trimmed | `ErrEmpty` |
 | A value over 64 KiB | `ErrLimit` |
-| A path that is not a regular file | `ErrNotRegular` |
+| A path that is not a regular file (for `ReadResolvedFile` too, checked on the opened file) | `ErrNotRegular` |
 | A file others may read (permission bit `0o004`) | `ErrWorldReadable` |
+| A file others may write (permission bit `0o002`), under every `FileRules` | `ErrWorldWritable` |
 | Any file, on an operating system that is not Unix | `ErrPermissionsUnknown` |
 
 The selector is read before any other member, so a document of a later format is refused as a
