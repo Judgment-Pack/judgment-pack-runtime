@@ -61,3 +61,8 @@ sdk/record/testdata/** -text
 # with what the emitter writes.
 cmd/jpack-emit-go-facts/vectors/** -text
 cmd/jpack-emit-go-facts/internal/golden/** -text
+
+# The TypeScript constants emitter's vectors and golden files are compared byte
+# for byte with what the emitter writes.
+cmd/jpack-emit-ts-constants/vectors/** -text
+cmd/jpack-emit-ts-constants/internal/golden/** -text
