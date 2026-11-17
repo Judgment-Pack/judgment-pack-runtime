@@ -191,11 +191,11 @@ authority, and following it confers no conformance status on anything.
 | [0093](0093-validate-and-resolve-a-registry-of-adopter-declared-kinds.md) | Validate and resolve a registry of adopter-declared kinds, as a top-level command | accepted |
 | [0094](0094-import-the-yaml-authoring-subset-with-a-reader-of-its-own.md) | Import the registry's YAML authoring subset with a reader of its own, refusing everything outside it | accepted |
 | [0095](0095-registry-entries-as-facts-and-generated-facts-contracts.md) | Write registry entries as facts for the outcome gate, generate a kind's facts contract, and check a pack against one | accepted |
-| [0096](0096-a-start-up-module-that-reads-a-resolved-registry-and-delivered-secrets.md) | Read one environment's resolved registry and the secrets the platform delivered in a start-up module of its own, under a 1.0 promise, never contacting a store | proposed |
-| [0097](0097-a-terraform-file-reader.md) | Read Terraform plan and state JSON for the `terraform-file` source, removing every value marked sensitive before selection | proposed |
-| [0098](0098-the-emitter-host.md) | Run a registry emitter on a canonical request and write or check only the files its manifest owns, as `jpack emit` | proposed |
-| [0099](0099-the-emitter-conformance-harness.md) | Check an emitter against its vectors through the host's own run and response steps, as `jpack emit conformance` | proposed |
-| [0100](0100-a-go-typed-facts-builder-emitter.md) | Generate Go typed facts builders from facts contracts in a standalone emitter, refusing a position or a name it cannot render | proposed |
-| [0101](0101-the-resolved-form-request-carries-the-read-kinds-declarations.md) | Carry the read kinds' declarations, as admitted and bound to their pins by digest, in a resolved-form emit request | proposed |
-| [0102](0102-a-go-typed-loader-emitter.md) | Generate a Go typed loader from the read kinds' declarations in a standalone emitter, with secrets typed and read lazily, refusing a shape or a name it cannot render | proposed |
-| [0103](0103-a-typescript-constants-emitter.md) | Generate TypeScript types and read-only constants for each environment from a resolved registry, leaving every secret position out of both | proposed |
+| [0096](0096-a-start-up-module-that-reads-a-resolved-registry-and-delivered-secrets.md) | Read one environment's resolved registry and the secrets the platform delivered in a start-up module of its own, under a 1.0 promise, never contacting a store | accepted |
+| [0097](0097-a-terraform-file-reader.md) | Read Terraform plan and state JSON for the `terraform-file` source, removing every value marked sensitive before selection | accepted |
+| [0098](0098-the-emitter-host.md) | Run a registry emitter on a canonical request and write or check only the files its manifest owns, as `jpack emit` | accepted |
+| [0099](0099-the-emitter-conformance-harness.md) | Check an emitter against its vectors through the host's own run and response steps, as `jpack emit conformance` | accepted |
+| [0100](0100-a-go-typed-facts-builder-emitter.md) | Generate Go typed facts builders from facts contracts in a standalone emitter, refusing a position or a name it cannot render | accepted |
+| [0101](0101-the-resolved-form-request-carries-the-read-kinds-declarations.md) | Carry the read kinds' declarations, as admitted and bound to their pins by digest, in a resolved-form emit request | accepted |
+| [0102](0102-a-go-typed-loader-emitter.md) | Generate a Go typed loader from the read kinds' declarations in a standalone emitter, with secrets typed and read lazily, refusing a shape or a name it cannot render | accepted |
+| [0103](0103-a-typescript-constants-emitter.md) | Generate TypeScript types and read-only constants for each environment from a resolved registry, leaving every secret position out of both | accepted |
