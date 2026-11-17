@@ -1,0 +1,51 @@
+{
+  "emitRequestVersion": "1.0.0",
+  "emitter": {
+    "id": "https://github.com/Judgment-Pack/judgment-pack-runtime/cmd/jpack-emit-go-loader",
+    "version": "0.1.0"
+  },
+  "options": {
+    "package": "p"
+  },
+  "declarations": [
+    {
+      "kindFormatVersion": "1.0.0",
+      "id": "https://example.invalid/kinds/pin-thing",
+      "version": "1.0.0",
+      "kind": "pin-thing",
+      "owner": "platform-data",
+      "schema": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "code": {
+            "type": "integer"
+          }
+        }
+      },
+      "secrets": [
+        "/code"
+      ]
+    }
+  ],
+  "resolved": [
+    {
+      "resolvedFormatVersion": "1.0.0",
+      "registry": {
+        "id": "https://example.invalid/registries/platform",
+        "version": "4.0.0",
+        "digest": "sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+      },
+      "environment": "dev",
+      "kinds": [
+        {
+          "kind": "pin-thing",
+          "id": "https://example.invalid/kinds/pin-thing",
+          "version": "1.0.0",
+          "digest": "sha256:a0d3d8df4c523be687f16b5669ce6baf24f89d8b73857e219baa9745c57c6397"
+        }
+      ],
+      "entries": []
+    }
+  ]
+}
