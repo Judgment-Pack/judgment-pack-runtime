@@ -195,9 +195,10 @@ release notes.
 - Its report, `emitReportVersion` `"1.0.0"`. This format is this runtime's own.
 
 The registry companion names `EMIT-REQUEST-VERSION`, `EMIT-KIND-RANGE`, `EMIT-REQUEST`,
-`EMIT-PROCESS`, `EMIT-RESPONSE` and `EMIT-DEPRECATED`. Ten more codes are this runtime's and
+`EMIT-PROCESS`, `EMIT-RESPONSE` and `EMIT-DEPRECATED`. Eleven more codes are this runtime's and
 provisional in the same way: `EMIT-MANIFEST`, `EMIT-OWNS-OVERLAP`, `EMIT-KIND-ID`, `EMIT-OPTIONS`,
-`EMIT-LINK`, `EMIT-PATH-UNREADABLE`, `EMIT-WRITE`, and the warnings `EMIT-ENV-UNSET`,
+`EMIT-LINK`, `EMIT-PATH-UNREADABLE`, `EMIT-WRITE`, `EMIT-INTERRUPTED` (an interrupt or SIGTERM
+that stopped `jpack emit` or `jpack emit conformance`), and the warnings `EMIT-ENV-UNSET`,
 `EMIT-REPORT-TRUNCATED` and `EMIT-STAGING-LEFTOVER` (a staging file an earlier run left, unowned, in
 a directory the host writes to). They are provisional until the companion's first host rows give
 these refusals codes. The bounds are the companion's: a response of 64 MiB, 10 000 files, 16 MiB per

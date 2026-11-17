@@ -226,10 +226,12 @@ func Emit(ctx context.Context, m *Manifest, others []*Manifest, in Inputs, opts 
 		}
 	}
 	slices.Sort(stale)
-	// An interrupt before this point refuses the run with nothing written;
-	// a write once begun is not cut short by one (BeginWrite).
+	// An interrupt before this point refuses the run with nothing written
+	// (EMIT-INTERRUPTED: every emitter may have exited 0, so EMIT-PROCESS
+	// would blame it); a write once begun is not cut short by one
+	// (BeginWrite).
 	if ctx.Err() != nil || opts.BeginWrite != nil && !opts.BeginWrite() {
-		return report.Refuse(diagnostic("EMIT-PROCESS", Location{Document: DocumentManifest, Pointer: "/command"}))
+		return report.Refuse(diagnostic("EMIT-INTERRUPTED", Location{Document: DocumentManifest, Pointer: "/command"}))
 	}
 	written, deleted, failures := write(opts.Root, files, stale, states, parents)
 	report.Written, report.Deleted = written, deleted

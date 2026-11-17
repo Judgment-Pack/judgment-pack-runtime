@@ -341,3 +341,13 @@ happens in both modes, and the warning does not change the outcome or the exit c
   for counts, and none is added, as in ADR-0093's bounded report.
 
 `EMIT-STAGING-LEFTOVER` is provisional, like the host's other codes (VERSIONING.md).
+
+## Amendment: an interrupted run has a code of its own (2026-11-17, #468)
+
+An interrupt or `SIGTERM` that stops `jpack emit` before its write, or ends the emitter while it
+runs, is now refused with `EMIT-INTERRUPTED` at `/command`, not `EMIT-PROCESS`: every emitter may
+have exited 0, and `EMIT-PROCESS` stays the code of an emitter that could not be started, exited
+non-zero or ran out of time. `jpack emit conformance` reports an interrupt with `EMIT-INTERRUPTED`
+at the vector too, where it used `EMIT-HARNESS-BOUND`, so one code names an interrupt in both
+commands; `EMIT-HARNESS-BOUND` keeps the harness's bounds and the determinism `HOME`.
+`EMIT-INTERRUPTED` is provisional, like the host's other codes (VERSIONING.md).

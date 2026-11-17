@@ -34,7 +34,7 @@ func (a *App) emitCommand() *cobra.Command {
 			"Its standard error is counted and discarded unless --emitter-stderr passes the first 64 KiB through. " +
 			"Its response is validated whole before anything changes: every path relative, safe and owned, unique once case is folded, at most 10000 files of at most 16 MiB, 64 MiB in all. " +
 			"Each file is written through a temporary file and a rename; an owned file the response does not hold is deleted; a symbolic link at or above an owned path refuses the run. " +
-			"An interrupt or SIGTERM before the write refuses the run (EMIT-PROCESS) with nothing written; a second one ends jpack at once, except once the write has begun, which then finishes. " +
+			"An interrupt or SIGTERM before the write refuses the run (EMIT-INTERRUPTED) with nothing written; a second one ends jpack at once, except once the write has begun, which then finishes. " +
 			"--check compares instead, byte for byte and mode for mode, and writes nothing. " +
 			"--other-manifest names another emitter manifest of the repository, whose owns globs must not overlap this one's. " +
 			"The report is JSON on standard output (emitReportVersion 1.0.0): paths, codes, digests and counts, never a file's contents or an env value. " +

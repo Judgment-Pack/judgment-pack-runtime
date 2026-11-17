@@ -13,7 +13,7 @@ import (
 )
 
 // An interrupted run (jpack was sent an interrupt or SIGTERM) refuses with
-// EMIT-HARNESS-BOUND at the vector it was running, drops that vector's rows
+// EMIT-INTERRUPTED at the vector it was running, drops that vector's rows
 // (they would report failures the emitter did not cause) and runs no later
 // vector.
 func TestAnInterruptedRunStopsAtItsVector(t *testing.T) {
@@ -27,7 +27,7 @@ func TestAnInterruptedRunStopsAtItsVector(t *testing.T) {
 	if report.Outcome != OutcomeNotRun || len(report.Rows) != 0 || len(report.Diagnostics) != 1 {
 		t.Fatalf("interrupted: %s", dump(report))
 	}
-	if d := report.Diagnostics[0]; d.Code != "EMIT-HARNESS-BOUND" || d.Location.Path != "a" {
+	if d := report.Diagnostics[0]; d.Code != "EMIT-INTERRUPTED" || d.Location.Path != "a" {
 		t.Fatalf("interrupted: %+v", d)
 	}
 }
@@ -47,7 +47,7 @@ func TestAnInterruptBeforeTheUpdateRewritesNothing(t *testing.T) {
 	report := Run(ctx, m, f.vectors, Options{Root: f.root, Timeout: time.Minute, Update: true,
 		BeginWrite: func() bool { asked++; cancel(); return false }, // as a signal just before the write
 		EndWrite:   func() { ended = true }})
-	if report.Outcome != OutcomeNotRun || len(report.Rows) != 0 || len(report.Diagnostics) != 1 || report.Diagnostics[0].Code != "EMIT-HARNESS-BOUND" || report.Diagnostics[0].Location.Path != "a" {
+	if report.Outcome != OutcomeNotRun || len(report.Rows) != 0 || len(report.Diagnostics) != 1 || report.Diagnostics[0].Code != "EMIT-INTERRUPTED" || report.Diagnostics[0].Location.Path != "a" {
 		t.Fatalf("interrupted before the write: %s", dump(report))
 	}
 	if asked != 1 || ended {
@@ -66,7 +66,7 @@ func TestAnInterruptedUpdateChecksTheContextFirst(t *testing.T) {
 	h := &harness{ctx: ctx, opts: Options{Update: true}}
 	run := &vectorRun{v: &Vector{Name: "v", Dir: dir}, files: []emit.File{{Path: "gen/new", Data: []byte("new\n"), Mode: emit.ModeRegular}}}
 	row, failure := h.golden(run, Row{Vector: "v", Check: checkGolden})
-	if failure == nil || failure.Code != "EMIT-HARNESS-BOUND" || row.Status != "" || !h.interrupted {
+	if failure == nil || failure.Code != "EMIT-INTERRUPTED" || row.Status != "" || !h.interrupted {
 		t.Fatalf("golden after an interrupt: %+v %+v", row, failure)
 	}
 	wantExpected(t, dir, []string{"gen"}, "old")
@@ -101,7 +101,7 @@ func TestAnInterruptDuringTheRenamesFinishesThem(t *testing.T) {
 	if names := vectorNames(t, filepath.Join(f.vectors, "a", "expected", "gen")); !slices.Equal(names, []string{"req"}) {
 		t.Fatalf("expected/gen after the update: %v", names)
 	}
-	if report.Outcome != OutcomeNotRun || len(report.Diagnostics) != 1 || report.Diagnostics[0].Code != "EMIT-HARNESS-BOUND" {
+	if report.Outcome != OutcomeNotRun || len(report.Diagnostics) != 1 || report.Diagnostics[0].Code != "EMIT-INTERRUPTED" {
 		t.Fatalf("interrupted during the write: %s", dump(report))
 	}
 	if len(report.Rows) != 1 || report.Rows[0].Vector != "a" || report.Rows[0].Check != checkGolden || report.Rows[0].Reason != reasonUpdated {

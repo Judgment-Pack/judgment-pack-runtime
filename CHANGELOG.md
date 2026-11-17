@@ -4,9 +4,16 @@ All notable changes to tagged releases are documented here.
 
 ## Unreleased
 
+- **An interrupted emitter run has a code of its own** (ADR-0098). `jpack emit` sent an interrupt
+  or SIGTERM before its write, or while its emitter runs, is now refused with the new provisional
+  code `EMIT-INTERRUPTED` at `/command`, where it gave `EMIT-PROCESS` even when every emitter
+  exited 0. `EMIT-PROCESS` keeps an emitter that could not be started, exited non-zero or ran out
+  of time. `jpack emit conformance` reports an interrupt with `EMIT-INTERRUPTED` at the vector,
+  where it gave `EMIT-HARNESS-BOUND`, so one code names an interrupt in both commands; the two
+  codes' fixed messages no longer mention an interrupt.
 - **`jpack emit conformance --update` gates its write as `jpack emit` does** (ADR-0099). An
   interrupt or SIGTERM after a vector's clean run, before its `expected/` is replaced, now
-  refuses the run at that vector (`EMIT-HARNESS-BOUND`) and leaves `expected/` untouched; before,
+  refuses the run at that vector (`EMIT-INTERRUPTED`) and leaves `expected/` untouched; before,
   `expected/` was rewritten and the report dropped its "updated" row. Once the replacement has
   begun, a second signal waits until it ends, so `expected/` is never left missing between its
   two renames; the run is then refused as interrupted, and the vector's check 1 row still says

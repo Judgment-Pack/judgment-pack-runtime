@@ -51,7 +51,8 @@ type RunResult struct {
 	// EmitterDiagnostics are those of the response, when it could be read.
 	EmitterDiagnostics []EmitterDiagnostic
 	// Diagnostics are the host's: EMIT-ENV-UNSET warnings, and EMIT-PROCESS
-	// or EMIT-RESPONSE when the run failed.
+	// or EMIT-RESPONSE when the run failed, or EMIT-INTERRUPTED when ctx was
+	// cancelled (jpack was interrupted) before the emitter finished.
 	Diagnostics []Diagnostic
 	// Started says whether the emitter's process was started. A run that
 	// fails before it (command[0] not found, no HOME) is EMIT-PROCESS too;
@@ -224,6 +225,11 @@ func Run(ctx context.Context, m *Manifest, requestVersion string, request []byte
 	switch {
 	case stdout.overflowed():
 		result.Diagnostics = append(result.Diagnostics, diagnostic("EMIT-RESPONSE", Location{Document: DocumentResponse}))
+		return result
+	case (err != nil || runCtx.Err() != nil) && ctx.Err() != nil:
+		// The run's context was cancelled, not its time limit reached:
+		// jpack was interrupted, and ended the emitter itself.
+		result.Diagnostics = append(result.Diagnostics, diagnostic("EMIT-INTERRUPTED", Location{Document: DocumentManifest, Pointer: "/command"}))
 		return result
 	case err != nil || runCtx.Err() != nil:
 		return processFailure(Location{Document: DocumentManifest, Pointer: "/command"})

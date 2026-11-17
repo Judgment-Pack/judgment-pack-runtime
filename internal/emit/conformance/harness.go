@@ -166,7 +166,7 @@ func Run(ctx context.Context, m *emit.Manifest, vectorsDir string, opts Options)
 				before++
 			}
 			report.Rows = report.Rows[:before]
-			return report.Refuse(vectorDiagnostic("EMIT-HARNESS-BOUND", v.Name, ""))
+			return report.Refuse(vectorDiagnostic("EMIT-INTERRUPTED", v.Name, ""))
 		}
 		if failure != nil {
 			return report.Refuse(*failure)
@@ -377,7 +377,7 @@ func (h *harness) golden(run *vectorRun, row Row) (Row, *emit.Diagnostic) {
 		// (BeginWrite), so expected/ is never left missing.
 		if !h.beginWrite() {
 			h.interrupted = true
-			d := vectorDiagnostic("EMIT-HARNESS-BOUND", run.v.Name, "")
+			d := vectorDiagnostic("EMIT-INTERRUPTED", run.v.Name, "")
 			return row, &d
 		}
 		err := writeExpected(run.v.Dir, run.files)

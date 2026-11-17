@@ -101,7 +101,7 @@ func TestAnInterruptEndsTheEmitterAndItsTemporaryDirectories(t *testing.T) {
 				// interrupt broke.
 				var exit *exec.ExitError
 				if !errors.As(waitErr, &exit) || exit.ExitCode() != 2 || !strings.Contains(output.String(), `"outcome":"not-run"`) ||
-					!strings.Contains(output.String(), `"code":"EMIT-HARNESS-BOUND"`) || strings.Contains(output.String(), `"status":"fail"`) {
+					!strings.Contains(output.String(), `"code":"EMIT-INTERRUPTED"`) || strings.Contains(output.String(), `"status":"fail"`) {
 					t.Fatalf("the interrupted harness: %v: %s", waitErr, output.String())
 				}
 			}
