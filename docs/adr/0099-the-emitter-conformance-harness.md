@@ -100,9 +100,11 @@ The two inputs are formed differently:
   registry and its kinds, each read under the host's bounds. An oversize options document is
   `EMIT-OPTIONS`, as the host reports it.
 - **A given request** is held to the envelope the host writes for the manifest, then written in
-  its canonical form. The envelope is: exactly the four members, the request version the host
-  writes, the manifest's emitter, options valid against its schema, the input member as an array,
-  and one environment for `resolved` with `each`. What the request carries inside is the author's.
+  its canonical form. The envelope is: exactly the five members of the resolved form
+  (`declarations` among them, an array) or the four of the facts form, the request version the
+  host writes, the manifest's emitter, options valid against its schema, the input member as an
+  array, and one environment for `resolved` with `each`. What the request carries inside is the
+  author's, a declaration that does not match its pin included (ADR-0101).
 
 `DIR/harness.json` is exactly `{"harnessLevel": LEVEL}`. Without it the level is `1.0`, and an
 unknown level is `EMIT-VECTOR` and exit 2.
@@ -111,9 +113,11 @@ unknown level is `EMIT-VECTOR` and exit 2.
 touches an expected-failure vector. It writes nowhere but `VECTOR/expected/`, which must be a
 directory or absent. The new `expected/` is written whole in a temporary directory in the
 vector, `.expected-update-*`, and renamed into place, and the old one is then removed, so a write
-that fails partway leaves `expected/` as it was. A run stopped between the renames can leave that
-directory, which the layout refuses as an unknown member until it is removed. A run that gives no files gets the
-marker `expected/~empty` alone, and a run that gives files has no marker. The vector directories
+that fails partway leaves `expected/` as it was. When the new one cannot be renamed into place and
+the old one cannot be put back, the temporary directory is kept, holding the old one, and the error
+names it. That directory, or one left by a run stopped between the renames, is refused by the layout
+as an unknown member until it is removed, so the old files are never lost. A run that gives no files
+gets the marker `expected/~empty` alone, and a run that gives files has no marker. The vector directories
 are not links.
 The checks then run against the new `expected/`.
 
@@ -165,7 +169,9 @@ the registry's order rules require. With those added, it forms each request agai
 the facts form. It then restores every `registry.digest` in the changed request to the original
 request's value at the same place. That place is `/resolved/N/registry/digest` and, in the facts
 form, a contract's `source.registry.digest` if a source carries one. Next it asserts that the result
-is byte-identical to the original request. A difference fails the row. The reason says whether the
+is byte-identical to the original request. In the resolved form that includes `declarations`, in
+which nothing is restored, so the synthetic kind's declaration must not be there (ADR-0101). A
+difference fails the row. The reason says whether the
 request holds the synthetic kind's id. Only then does the harness run the emitter again and assert
 that the response is unchanged. That run is on the original request's bytes: the restored bytes are
 those bytes exactly, or the row has already failed. So the byte comparison is what tests that no
@@ -324,6 +330,11 @@ These are carried, not fixed. None gives a wrong verdict for an honest emitter o
   each `..` from where the parts before it led. If Windows instead resolves `..` lexically, a
   target such as `a -> b\..\..\x`, with `b -> deep\deeper`, passes the check but leads out. It
   needs a run on Windows with the privilege to make links.
+- **Synced-folder placeholders (Windows).** A file a sync client has not yet downloaded is a
+  reparse point that Go reads as irregular, not as a regular file, so check 6 refuses it and a
+  repository holding one is refused with `EMIT-HARNESS-BOUND` at its path. Downloading the file
+  first lets the run go ahead. The refusal is deliberate: the harness cannot read such a file
+  without making the sync client fetch it.
 
 ## More information
 

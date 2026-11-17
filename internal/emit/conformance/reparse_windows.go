@@ -11,7 +11,8 @@ import (
 // FILE_ATTRIBUTE_REPARSE_POINT: a symbolic link, a junction, or another
 // reparse point. An entry whose attributes cannot be read is taken as one,
 // which refusesReparse then refuses unless Go reads it as a link or a file.
-func reparsePoint(entry fs.DirEntry) (bool, error) {
+// It is a variable so that tests can report one.
+var reparsePoint = func(entry fs.DirEntry) (bool, error) {
 	info, err := entry.Info()
 	if err != nil {
 		return false, err

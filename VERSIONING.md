@@ -193,9 +193,9 @@ release notes.
 - The response it accepts, `emitResponseVersion`. It accepts `1.0.0`.
 - Its report, `emitReportVersion` `"1.0.0"`. This format is this runtime's own.
 
-The registry companion names `EMIT-REQUEST-VERSION`, `EMIT-KIND-RANGE`, `EMIT-PROCESS`,
-`EMIT-RESPONSE` and `EMIT-DEPRECATED`. Ten more codes are this runtime's and provisional in the same
-way: `EMIT-MANIFEST`, `EMIT-OWNS-OVERLAP`, `EMIT-KIND-ID`, `EMIT-OPTIONS`, `EMIT-REQUEST`,
+The registry companion names `EMIT-REQUEST-VERSION`, `EMIT-KIND-RANGE`, `EMIT-REQUEST`,
+`EMIT-PROCESS`, `EMIT-RESPONSE` and `EMIT-DEPRECATED`. Nine more codes are this runtime's and
+provisional in the same way: `EMIT-MANIFEST`, `EMIT-OWNS-OVERLAP`, `EMIT-KIND-ID`, `EMIT-OPTIONS`,
 `EMIT-LINK`, `EMIT-PATH-UNREADABLE`, `EMIT-WRITE`, and the warnings `EMIT-ENV-UNSET` and
 `EMIT-REPORT-TRUNCATED`. They are provisional until the companion's first host rows give these
 refusals codes. The bounds are the companion's: a response of 64 MiB, 10 000 files, 16 MiB per

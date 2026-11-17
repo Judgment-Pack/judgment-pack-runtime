@@ -20,6 +20,9 @@ import (
 // emitter on it, and require the response to be unchanged. The digest is
 // restored because it is the registry's, which the synthetic entry changes,
 // and an emitter may write it into a generated file's header (RFC 0036 §4).
+// The comparison is of the whole request, so in the resolved form it holds
+// declarations too: the synthetic kind's declaration must not be among them,
+// and nothing is restored there.
 
 // The synthetic kind and its entry. The kind's name is taken from these, with
 // a number added while the registry pins, or the manifest reads, one of that

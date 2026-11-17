@@ -67,10 +67,13 @@ both.
 reads is checked against its range (`EMIT-KIND-RANGE`) and its kind id (`EMIT-KIND-ID`). Every
 entry and pin of a kind it does not read is removed before the request is formed. The options are
 validated against the manifest's schema (`EMIT-OPTIONS`). The request is
-`{"emitRequestVersion", "emitter", "options", "resolved"}`, or `factsContracts` in place of
-`resolved`, as RFC 8785 canonical JSON. It holds one environment for `"each"`, or all of them in
-order for `"all"`. The host picks the highest request version it writes that the manifest lists
-(`EMIT-REQUEST-VERSION`). Request `1.0.0` carries `resolvedFormatVersion` and
+`{"emitRequestVersion", "emitter", "options", "declarations", "resolved"}`, or `factsContracts` in
+place of `declarations` and `resolved`, as RFC 8785 canonical JSON. It holds one environment for
+`"each"`, or all of them in order for `"all"`. `declarations` holds the declaration of each read
+kind as admitted, sorted by kind, and the SHA-256 of each one is its pin's digest. A request whose
+pins and declarations do not match one to one is refused (`EMIT-REQUEST`). ADR-0101 and companion
+§11.2 (spec #352) record this. The host picks the highest request version it writes that the
+manifest lists (`EMIT-REQUEST-VERSION`). Request `1.0.0` carries `resolvedFormatVersion` and
 `factsContractVersion` `1.0.0`.
 
 **Response (§3).** `emit.ParseResponse` admits the response, then checks the following. Each
