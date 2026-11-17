@@ -192,7 +192,9 @@ func (a *App) emitCommand() *cobra.Command {
 // even during a long copy, except while the repository is being written:
 // beginWrite marks that phase, and from then on the signals stay caught, so
 // a write once begun finishes rather than leave staged files and a partly
-// applied response. The write is bounded, so this holds jpack briefly.
+// applied response. The write is bounded, so this holds jpack briefly. A run
+// that writes more than once (`jpack emit conformance --update`, once per
+// vector) ends each write with endWrite.
 type interruption struct {
 	ctx     context.Context
 	stop    context.CancelFunc
@@ -227,6 +229,18 @@ func (in *interruption) beginWrite() bool {
 	}
 	in.writing = true
 	return true
+}
+
+// endWrite ends a write phase beginWrite began, for a run that writes more
+// than once (`jpack emit conformance --update`): a signal that came during
+// the write has cancelled the run, and from now on a second one ends jpack.
+func (in *interruption) endWrite() {
+	in.mu.Lock()
+	defer in.mu.Unlock()
+	in.writing = false
+	if in.ctx.Err() != nil {
+		in.stop()
+	}
 }
 
 // readManifest reads and checks one emitter manifest; index 0 is the one run.

@@ -2,6 +2,16 @@
 
 All notable changes to tagged releases are documented here.
 
+## Unreleased
+
+- **`jpack emit conformance --update` gates its write as `jpack emit` does** (ADR-0099). An
+  interrupt or SIGTERM after a vector's clean run, before its `expected/` is replaced, now
+  refuses the run at that vector (`EMIT-HARNESS-BOUND`) and leaves `expected/` untouched; before,
+  `expected/` was rewritten and the report dropped its "updated" row. Once the replacement has
+  begun, a second signal waits until it ends, so `expected/` is never left missing between its
+  two renames; the run is then refused as interrupted, and the vector's check 1 row still says
+  `expected/` was written. A signal after the replacement ends `jpack` again.
+
 ## 0.49.0 - 2026-11-17
 
 - **`TF-VALUE-LIMIT`'s message names both bounds.** It named only the 268435456-byte cap, even
