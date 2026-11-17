@@ -230,12 +230,26 @@ func (v *Vector) at(file string) string {
 // errTooManyEntries is walkBounded's: more entries than its limit.
 var errTooManyEntries = errors.New("conformance: more directory entries than the bound")
 
+// walkBudget bounds each listing of a walk past the walk's own limit.
+type walkBudget struct {
+	// room, when not nil, is the most entries the directory full may hold: a
+	// listing past it stops the walk with errTooManyEntries, unread, as one
+	// past the walk's limit does.
+	room func(full string) int
+	// listed, when not nil, is told how many entries the directory full held,
+	// before any of them is walked.
+	listed func(full string, entries int)
+}
+
+// listWalked is how walkBounded lists a directory.
+var listWalked = listBounded
+
 // walkBounded walks root as filepath.WalkDir does, in lexical order and
 // without following a link, but lists each directory with listBounded, and
-// stops with errTooManyEntries once the entries below root pass limit, so no
-// directory is held whole past the bound. fn may return fs.SkipDir for a
-// directory, and fs.SkipAll.
-func walkBounded(root string, limit int, fn fs.WalkDirFunc) error {
+// stops with errTooManyEntries once the entries below root pass limit, or a
+// directory's pass the budget's room, so no directory is held whole past
+// either. fn may return fs.SkipDir for a directory, and fs.SkipAll.
+func walkBounded(root string, limit int, budget walkBudget, fn fs.WalkDirFunc) error {
 	info, err := os.Lstat(root)
 	if err != nil {
 		return skipped(fn(root, nil, err))
@@ -246,7 +260,11 @@ func walkBounded(root string, limit int, fn fs.WalkDirFunc) error {
 		if err := fn(full, entry, nil); err != nil || !entry.IsDir() {
 			return err
 		}
-		children, over, err := listBounded(full, func(fs.DirEntry) bool { return true }, limit-seen)
+		bound := limit - seen
+		if budget.room != nil {
+			bound = min(bound, max(budget.room(full), 0))
+		}
+		children, over, err := listWalked(full, func(fs.DirEntry) bool { return true }, bound)
 		switch {
 		case over:
 			return errTooManyEntries
@@ -254,6 +272,9 @@ func walkBounded(root string, limit int, fn fs.WalkDirFunc) error {
 			return fn(full, entry, err)
 		}
 		seen += len(children)
+		if budget.listed != nil {
+			budget.listed(full, len(children))
+		}
 		for _, child := range children {
 			err := walk(filepath.Join(full, child.Name()), child)
 			if err == fs.SkipDir && child.IsDir() {
@@ -287,6 +308,10 @@ var maxVectorEntries = 64
 // emit.MaxPathBytes bytes has at most emit.MaxPathBytes/2 segments, so a file
 // lies below at most that many directories less one, and an entry whose path
 // is longer is refused, as no response could name it.
+//
+// These bound a record. layoutExpected also bounds the walk by what it has
+// read so far, so that walking a tree that is no record costs about what the
+// files it holds do, not these bounds.
 var (
 	maxExpectedFiles = emit.MaxFiles
 	maxExpectedDirs  = emit.MaxFiles * (emit.MaxPathBytes/2 - 1)
@@ -517,19 +542,45 @@ func failureCode(code string) bool {
 // refuses the vector. An expected/ with neither a regular file nor the marker
 // (empty, or holding only directories) refuses it too, as no record of a run
 // at all, except under --update, which replaces it.
+//
+// The walk is bounded by what it has read so far, in both modes, by two
+// facts about a record: every entry below expected/ holds at least one of
+// its files, and every directory lies above one of them, at most
+// emit.MaxPathBytes/2-1 deep. So a directory is listed only while the
+// entries walked that are not directories, the entries still to walk and its
+// own are at most one past the file bound (one past, so that the file past
+// it is refused at its path as before); past that the vector is refused at
+// expected/, unread. And the directories walked are at most that depth for
+// each file read, and that depth and one for the path being walked; past
+// that the vector is refused at expected/. A record within the bounds is
+// read whole, a few empty directories beside its files as well; a tree of
+// directories that holds no file is refused once it passes the directories
+// of one path.
 func layoutExpected(dir, at string, update bool) ([]expectedEntry, []emit.Diagnostic) {
 	var entries []expectedEntry
 	var refused []emit.Diagnostic
 	var total int64
 	marker, beside := false, false
 	dirs := 0
-	err := walkBounded(dir, maxExpectedFiles+maxExpectedDirs, func(full string, entry fs.DirEntry, err error) error {
+	// pending counts the entries listed and not yet walked, leaves the
+	// entries walked that are not directories.
+	pending, leaves := 0, 0
+	budget := walkBudget{
+		room:   func(string) int { return maxExpectedFiles + 1 - leaves - pending },
+		listed: func(_ string, n int) { pending += n },
+	}
+	err := walkBounded(dir, maxExpectedFiles+maxExpectedDirs, budget, func(full string, entry fs.DirEntry, err error) error {
 		relative, _ := filepath.Rel(dir, full)
 		path := filepath.ToSlash(relative)
 		where := at + "/" + path
 		if err != nil {
 			refused = append(refused, vectorDiagnostic("EMIT-PATH-UNREADABLE", where, ""))
 			return fs.SkipDir
+		}
+		if path != "." {
+			if pending--; !entry.IsDir() {
+				leaves++
+			}
 		}
 		switch {
 		case path == ".":
@@ -555,7 +606,7 @@ func layoutExpected(dir, at string, update bool) ([]expectedEntry, []emit.Diagno
 			refused = append(refused, vectorDiagnostic("EMIT-VECTOR", at, ""))
 			return fs.SkipAll
 		case entry.IsDir():
-			if dirs++; dirs > maxExpectedDirs {
+			if dirs++; dirs > min(maxExpectedDirs, (emit.MaxPathBytes/2-1)*len(entries)+emit.MaxPathBytes/2) {
 				refused = append(refused, vectorDiagnostic("EMIT-VECTOR", at, ""))
 				return fs.SkipAll
 			}
