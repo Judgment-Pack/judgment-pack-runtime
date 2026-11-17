@@ -2,6 +2,13 @@
 
 All notable changes to tagged releases are documented here.
 
+## Unreleased
+
+- **The registry line's support window** (VERSIONING.md, "The registry line"). Fixes land in the
+  latest `jpack` minor and the latest `startup/v1` tag, as before. Security fixes are now also
+  backported to the previous `jpack` minor and the previous `startup/v1` minor for three months
+  after its successor is released. There is still no service-level guarantee.
+
 ## 0.49.0 - 2026-11-17
 
 - **`TF-VALUE-LIMIT`'s message names both bounds.** It named only the 268435456-byte cap, even
