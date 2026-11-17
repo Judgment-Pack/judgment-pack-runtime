@@ -1,0 +1,169 @@
+{
+  "emitRequestVersion": "1.0.0",
+  "emitter": {
+    "id": "https://github.com/Judgment-Pack/judgment-pack-runtime/cmd/jpack-emit-go-loader",
+    "version": "0.1.0"
+  },
+  "options": {
+    "package": "policyloader"
+  },
+  "declarations": [
+    {
+      "kindFormatVersion": "1.0.0",
+      "id": "https://example.invalid/kinds/access-policy",
+      "version": "1.0.0",
+      "kind": "access-policy",
+      "owner": "platform-data",
+      "schema": {
+        "type": "object",
+        "required": [
+          "grants",
+          "limits"
+        ],
+        "additionalProperties": false,
+        "properties": {
+          "grants": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "required": [
+                "principal",
+                "password"
+              ],
+              "additionalProperties": false,
+              "properties": {
+                "principal": {
+                  "type": "string"
+                },
+                "password": {
+                  "type": "string"
+                },
+                "scopes": {
+                  "type": "array",
+                  "items": {
+                    "type": "string"
+                  }
+                }
+              }
+            }
+          },
+          "limits": {
+            "type": "object",
+            "additionalProperties": {
+              "type": "integer"
+            }
+          },
+          "weights": {
+            "type": "object",
+            "additionalProperties": {
+              "type": "number"
+            }
+          },
+          "enabled": {
+            "type": "boolean"
+          },
+          "labels": {
+            "type": "array",
+            "items": {
+              "type": "array",
+              "items": {
+                "type": "string"
+              }
+            }
+          },
+          "annotations": {
+            "description": "Any JSON value, kept as written."
+          },
+          "extras": {
+            "type": "array"
+          }
+        }
+      },
+      "secrets": [
+        "/grants/*/password"
+      ]
+    }
+  ],
+  "resolved": [
+    {
+      "resolvedFormatVersion": "1.0.0",
+      "registry": {
+        "id": "https://example.invalid/registries/platform",
+        "version": "4.0.0",
+        "digest": "sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+      },
+      "environment": "dev",
+      "kinds": [
+        {
+          "kind": "access-policy",
+          "id": "https://example.invalid/kinds/access-policy",
+          "version": "1.0.0",
+          "digest": "sha256:bbe824076265c4136213cef96e2d39c53c9afdb2841d20a2c127db12dfd5a10d"
+        }
+      ],
+      "entries": [
+        {
+          "kind": "access-policy",
+          "id": "billing",
+          "owner": "platform-data",
+          "value": {
+            "grants": [
+              {
+                "principal": "billing-app",
+                "password": "secret:gcp-sm:projects/example-dev/secrets/billing-grant/versions/1",
+                "scopes": [
+                  "read"
+                ]
+              }
+            ],
+            "limits": {
+              "connections": 20,
+              "requests": 1000
+            },
+            "enabled": true,
+            "labels": [
+              [
+                "team",
+                "billing"
+              ]
+            ],
+            "annotations": {
+              "any": [
+                "value",
+                1
+              ]
+            }
+          }
+        }
+      ]
+    },
+    {
+      "resolvedFormatVersion": "1.0.0",
+      "registry": {
+        "id": "https://example.invalid/registries/platform",
+        "version": "4.0.0",
+        "digest": "sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+      },
+      "environment": "prod",
+      "kinds": [
+        {
+          "kind": "access-policy",
+          "id": "https://example.invalid/kinds/access-policy",
+          "version": "1.0.0",
+          "digest": "sha256:bbe824076265c4136213cef96e2d39c53c9afdb2841d20a2c127db12dfd5a10d"
+        }
+      ],
+      "entries": [
+        {
+          "kind": "access-policy",
+          "id": "billing",
+          "owner": "platform-data",
+          "value": {
+            "grants": [],
+            "limits": {}
+          }
+        }
+      ]
+    }
+  ]
+}

@@ -1,0 +1,44 @@
+{
+  "kindFormatVersion": "1.0.0",
+  "id": "https://example.invalid/kinds/db-role",
+  "version": "1.2.0",
+  "kind": "db-role",
+  "owner": "platform",
+  "schema": {
+    "type": "object",
+    "additionalProperties": false,
+    "required": [
+      "database"
+    ],
+    "properties": {
+      "database": {
+        "type": "string"
+      },
+      "grants": {
+        "type": "array",
+        "items": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "role": {
+              "type": "string"
+            },
+            "password": {
+              "type": "string"
+            }
+          }
+        }
+      },
+      "replicas": {
+        "type": "object",
+        "additionalProperties": {
+          "type": "string"
+        }
+      }
+    }
+  },
+  "secrets": [
+    "/grants/*/password",
+    "/replicas/*"
+  ]
+}

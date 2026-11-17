@@ -1,0 +1,31 @@
+{
+  "emitRequestVersion": "1.0.0",
+  "emitter": {
+    "id": "https://github.com/Judgment-Pack/judgment-pack-runtime/cmd/jpack-emit-go-loader",
+    "version": "0.1.0"
+  },
+  "options": {
+    "package": "dbroleloader"
+  },
+  "declarations": [],
+  "resolved": [
+    {
+      "resolvedFormatVersion": "1.0.0",
+      "registry": {
+        "id": "https://example.invalid/registries/platform",
+        "version": "4.0.0",
+        "digest": "sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+      },
+      "environment": "dev",
+      "kinds": [
+        {
+          "kind": "db-role",
+          "id": "https://example.invalid/kinds/db-role",
+          "version": "1.2.0",
+          "digest": "sha256:d5aa46404ca9baad7d227ac48f05b96a419566dee89b6547d1b0a0f2fff08bb5"
+        }
+      ],
+      "entries": []
+    }
+  ]
+}
