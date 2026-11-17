@@ -4,6 +4,11 @@ All notable changes to tagged releases are documented here.
 
 ## Unreleased
 
+- **The fuzz workflow takes a fuzzing time on demand** (`.github/workflows/fuzz.yml`). A manual
+  run accepts `fuzztime` (default `30s`; a whole number with `s`, `m` or `h`, at most `340m`), and
+  each target's job limit follows it: the time plus ten minutes, at most 350 minutes. A value of
+  another form, or one over the cap, fails the run before any target starts. The scheduled run is
+  unchanged.
 - **The start-up module's refusals and limits are in the mutation table**
   (docs/registry-mutation-table.md). The module reports no codes, so its rows are named by its
   exported error values (`ErrLimit`, `ErrWorldReadable`, `ErrDocument` and the others) and its
