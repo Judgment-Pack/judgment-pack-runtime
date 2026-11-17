@@ -2,6 +2,7 @@ package conformance
 
 import (
 	"errors"
+	"fmt"
 	"os"
 	"path/filepath"
 	"runtime"
@@ -10,6 +11,7 @@ import (
 	"testing"
 
 	"github.com/Judgment-Pack/judgment-pack-runtime/internal/emit"
+	"github.com/Judgment-Pack/judgment-pack-runtime/internal/registry"
 )
 
 // The request mode answers each environment's request as a file: its files
@@ -541,6 +543,8 @@ func TestGivenRequest(t *testing.T) {
 		"given/request.json":                  request,
 		"wrong-emitter/request.json":          strings.Replace(request, "emitters/test", "emitters/other", 1),
 		"wrong-emitter/expected-failure.json": `{"code":"EMIT-REQUEST"}`,
+		// A file beside the vectors is the author's, and not a vector.
+		"README.md": "notes\n",
 	})
 	report := f.run(m, true)
 	if report.Outcome != OutcomePass {
@@ -572,9 +576,15 @@ func TestVectorLayoutRefusals(t *testing.T) {
 		"neither expected nor fail":  {map[string]string{"v/request.json": "{}"}, "", "v/expected"},
 		"request and registry":       {map[string]string{"v/request.json": "{}", "v/registry.json": "{}", "v/kinds/a.json": "{}", "v/expected/gen/a": "a\n"}, "", "v"},
 		"a registry without kinds":   {map[string]string{"v/registry.json": "{}", "v/expected/gen/a": "a\n"}, "", "v/kinds"},
-		"an unknown member":          {map[string]string{"v/request.json": "{}", "v/expected/gen/a": "a\n", "v/notes.txt": "x"}, "", "v/notes.txt"},
-		"a failure code not listed":  {map[string]string{"v/request.json": "{}", "v/expected-failure.json": `{"code":"EMIT-NOT-A-CODE"}`}, "/code", "v/expected-failure.json"},
-		"a warning's code":           {map[string]string{"v/request.json": "{}", "v/expected-failure.json": `{"code":"EMIT-DEPRECATED"}`}, "/code", "v/expected-failure.json"},
+		"request and kinds":          {map[string]string{"v/request.json": "{}", "v/kinds/a.json": "{}", "v/expected/gen/a": "a\n"}, "", "v"},
+		"request and options":        {map[string]string{"v/request.json": "{}", "v/options.json": "{}", "v/expected/gen/a": "a\n"}, "", "v"},
+		"a harness.json past its bound": {map[string]string{"harness.json": `{"harnessLevel":"1.0"}` + strings.Repeat(" ", MaxSmallDocumentBytes),
+			"v/request.json": "{}", "v/expected/gen/a": "a\n"}, "", "harness.json"},
+		"an unknown member":               {map[string]string{"v/request.json": "{}", "v/expected/gen/a": "a\n", "v/notes.txt": "x"}, "", "v/notes.txt"},
+		"a failure code not listed":       {map[string]string{"v/request.json": "{}", "v/expected-failure.json": `{"code":"EMIT-NOT-A-CODE"}`}, "/code", "v/expected-failure.json"},
+		"a warning's code":                {map[string]string{"v/request.json": "{}", "v/expected-failure.json": `{"code":"EMIT-DEPRECATED"}`}, "/code", "v/expected-failure.json"},
+		"a reader's code":                 {map[string]string{"v/request.json": "{}", "v/expected-failure.json": `{"code":"REG-DOC-SIZE"}`}, "/code", "v/expected-failure.json"},
+		"an expected file past its bound": {map[string]string{"v/request.json": "{}", "v/expected/gen/a": strings.Repeat("a", emit.MaxFileBytes+1)}, "", "v/expected/gen/a"},
 		// The marker ~empty is a zero-byte regular file alone at the root of
 		// expected/; anything else that involves it refuses the vector.
 		"a marker that is not empty":   {map[string]string{"v/request.json": "{}", "v/expected/~empty": "x"}, "", "v/expected/~empty"},
@@ -614,6 +624,8 @@ func TestVectorsAreReadOneAtATime(t *testing.T) {
 	}{
 		"a later vector of a wrong layout": {map[string]string{"b/request.json": "{}", "b/expected-failure.json": `{"code":"EMIT-PROCESS"}`, "b/notes.txt": "x"}, false, "b/notes.txt"},
 		"a later vector read malformed":    {map[string]string{"b/request.json": "{}", "b/expected-failure.json": `{"code":`}, true, "b/expected-failure.json"},
+		"a later vector read past a bound": {map[string]string{"b/request.json": "{}",
+			"b/expected-failure.json": `{"code":"EMIT-PROCESS"}` + strings.Repeat(" ", MaxSmallDocumentBytes)}, true, "b/expected-failure.json"},
 	}
 	for name, c := range cases {
 		t.Run(name, func(t *testing.T) {
@@ -826,5 +838,162 @@ func TestDeprecatedAndEnvUnsetAreReportedOnce(t *testing.T) {
 	}
 	if !slices.Equal(codes, []string{"EMIT-DEPRECATED", "EMIT-ENV-UNSET"}) || report.Outcome != OutcomePass {
 		t.Fatalf("diagnostics: %s", dump(report))
+	}
+}
+
+// A registry or kind declaration the vector gives that is past its reader's
+// bound is read no further: the registry is not valid, so the request is not
+// formed (EMIT-REQUEST in the registry document) and the emitter does not run.
+func TestADocumentOfAVectorPastItsBoundIsRefused(t *testing.T) {
+	cases := map[string]map[string]string{
+		"a registry": {"registry.json": registryText(t) + strings.Repeat(" ", registry.MaxRegistryBytes)},
+		"a kind":     {"kinds/queue.json": queueKind + strings.Repeat(" ", registry.MaxKindBytes)},
+	}
+	for name, files := range cases {
+		t.Run(name, func(t *testing.T) {
+			f := newFixture(t)
+			files["expected-failure.json"] = `{"code":"x-not-reported"}`
+			f.registryVector("v", files)
+			report := f.run(f.manifest(requestMode, nil), false)
+			row := rowOf(t, report, "v", checkGolden)
+			if row.Status != StatusFail || row.Reason != reasonWrongFailure || len(row.Diagnostics) != 1 {
+				t.Fatalf("golden row: %+v", row)
+			}
+			if d := row.Diagnostics[0]; d.Code != "EMIT-REQUEST" || d.Location.Document != emit.DocumentRegistry || d.Location.Pointer != "" {
+				t.Fatalf("diagnostic: %+v", d)
+			}
+			if row := rowOf(t, report, "v", checkPathSafety); row.Status != StatusSkip || row.Reason != reasonRefused {
+				t.Fatalf("check 3: %+v", row)
+			}
+		})
+	}
+}
+
+// Options the vector gives that are past their bound, or not admitted, are
+// the host's EMIT-OPTIONS, as `jpack emit --options` refuses them: located
+// in the options document, at the value that refuses them, and before the
+// emitter runs.
+func TestOptionsOfAVectorAreAdmitted(t *testing.T) {
+	cases := map[string]struct {
+		options string
+		pointer string
+	}{
+		"past the bound":    {`{}` + strings.Repeat(" ", emit.MaxOptionsBytes), ""},
+		"a repeated member": {`{"a":1,"a":2}`, "/a"},
+	}
+	for name, c := range cases {
+		t.Run(name, func(t *testing.T) {
+			f := newFixture(t)
+			f.registryVector("v", map[string]string{"options.json": c.options, "expected-failure.json": `{"code":"x-not-reported"}`})
+			report := f.run(f.manifest(requestMode, nil), false)
+			row := rowOf(t, report, "v", checkGolden)
+			if row.Status != StatusFail || row.Reason != reasonWrongFailure || len(row.Diagnostics) != 1 {
+				t.Fatalf("golden row: %+v", row)
+			}
+			if d := row.Diagnostics[0]; d.Code != "EMIT-OPTIONS" || d.Location.Document != emit.DocumentOptions || d.Location.Pointer != c.pointer {
+				t.Fatalf("diagnostic: %+v", d)
+			}
+			if row := rowOf(t, report, "v", checkPathSafety); row.Status != StatusSkip || row.Reason != reasonRefused {
+				t.Fatalf("check 3: %+v", row)
+			}
+		})
+	}
+}
+
+// An emitter that refuses a request with an error diagnostic gives a
+// response the host does not take, its finding at the diagnostic itself:
+// check 3 passes it as of its form, and check 1 passes a vector that expects
+// the emitter's code.
+func TestAnEmitterRefusalIsOfItsForm(t *testing.T) {
+	f := newFixture(t)
+	write(t, f.root, map[string]string{"answers/refuse.json": `{"emitResponseVersion":"1.0.0","files":[],"diagnostics":[` +
+		`{"severity":"error","code":"x-refused","location":{"document":"value","entry":{"kind":"queue","id":"orders"},"environment":"dev","pointer":"/retention"}}]}` + "\n"})
+	m := f.manifest([]string{"echo", "answers/refuse.json"}, map[string]any{"environments": "all"})
+	f.registryVector("refused", map[string]string{"expected-failure.json": `{"code":"x-refused"}`})
+	f.registryVector("other-code", map[string]string{"expected-failure.json": `{"code":"x-other"}`})
+	report := f.run(m, false)
+	if row := rowOf(t, report, "refused", checkGolden); row.Status != StatusPass || row.Expected != "x-refused" {
+		t.Fatalf("golden: %+v", row)
+	}
+	if row := rowOf(t, report, "refused", checkPathSafety); row.Status != StatusPass || row.Reason != "" {
+		t.Fatalf("check 3: %+v", row)
+	}
+	row := rowOf(t, report, "other-code", checkGolden)
+	if row.Status != StatusFail || row.Reason != reasonWrongFailure || len(row.EmitterDiagnostics) != 1 ||
+		row.EmitterDiagnostics[0].Code != "x-refused" || row.EmitterDiagnostics[0].Environment != "" {
+		t.Fatalf("another code: %+v", row)
+	}
+}
+
+// Two runs of one vector that give one path are refused by the host's rule,
+// at the later response's file, in its environment: check 1 fails as a run
+// that failed, with that finding, and check 3 fails it as unsafe.
+func TestTwoRunsThatGiveOnePathAreRefused(t *testing.T) {
+	f := newFixture(t)
+	write(t, f.root, map[string]string{"answers/one.json": `{"emitResponseVersion":"1.0.0","files":[{"path":"gen/one","text":"x\n"}],"diagnostics":[]}` + "\n"})
+	m := f.manifest([]string{"echo", "answers/one.json"}, nil)
+	f.registryVector("v", map[string]string{"expected/gen/one": "x\n"})
+	report := f.run(m, false)
+	want := emit.Location{Document: emit.DocumentResponse, Environment: "prod", Pointer: "/files/0/path"}
+	row := rowOf(t, report, "v", checkGolden)
+	if row.Status != StatusFail || row.Reason != reasonRunFailed || len(row.Diagnostics) != 1 ||
+		row.Diagnostics[0].Code != "EMIT-RESPONSE" || row.Diagnostics[0].Location != want {
+		t.Fatalf("golden: %+v", row)
+	}
+	row = rowOf(t, report, "v", checkPathSafety)
+	if row.Status != StatusFail || row.Reason != reasonUnsafe || len(row.Diagnostics) != 1 || row.Diagnostics[0].Location != want {
+		t.Fatalf("check 3: %+v", row)
+	}
+}
+
+// An expected/ that --update cannot put in place stops the run with
+// EMIT-WRITE at the vector's expected/, and leaves nothing behind it.
+func TestUpdateThatCannotWriteStopsTheRun(t *testing.T) {
+	f := newFixture(t)
+	f.registryVector("v", nil)
+	target := filepath.Join(f.vectors, "v", dirExpected)
+	saved := rename
+	defer func() { rename = saved }()
+	rename = func(from, to string) error {
+		if to == target {
+			return os.ErrPermission
+		}
+		return saved(from, to)
+	}
+	report := f.run(f.manifest(requestMode, nil), true)
+	if report.Outcome != OutcomeNotRun || len(report.Diagnostics) != 1 {
+		t.Fatalf("report: %s", dump(report))
+	}
+	if d := report.Diagnostics[0]; d.Code != "EMIT-WRITE" || d.Location.Document != DocumentVector || d.Location.Path != "v/expected" {
+		t.Fatalf("diagnostic: %+v", d)
+	}
+	if names := vectorNames(t, filepath.Join(f.vectors, "v")); slices.ContainsFunc(names, func(name string) bool {
+		return name == dirExpected || strings.HasPrefix(name, expectedUpdatePrefix)
+	}) {
+		t.Fatalf("the vector holds %v", names)
+	}
+}
+
+// The differences a row lists are bounded, as the report's diagnostics are:
+// an expected/ of more extra files than the bound lists only the first.
+func TestDifferencesAreBounded(t *testing.T) {
+	f := newFixture(t)
+	m := f.manifest(requestMode, nil)
+	f.registryVector("v", nil)
+	if report := f.run(m, true); report.Outcome != OutcomePass {
+		t.Fatalf("update: %s", dump(report))
+	}
+	extra := map[string]string{}
+	for i := 0; i <= maxListed; i++ {
+		extra[fmt.Sprintf("gen/extra/%04d", i)] = "x\n"
+	}
+	write(t, filepath.Join(f.vectors, "v", "expected"), extra)
+	row := rowOf(t, f.run(m, false), "v", checkGolden)
+	if row.Status != StatusFail || row.Reason != reasonDifferent || len(row.Differences) != maxListed {
+		t.Fatalf("golden: %s %s, %d differences", row.Status, row.Reason, len(row.Differences))
+	}
+	if first, last := row.Differences[0], row.Differences[maxListed-1]; first != (emit.Difference{Path: "gen/extra/0000", Difference: emit.DifferenceExtra}) ||
+		last.Path != fmt.Sprintf("gen/extra/%04d", maxListed-1) {
+		t.Fatalf("differences from %+v to %+v", first, last)
 	}
 }

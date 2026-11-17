@@ -1,6 +1,7 @@
 package conformance
 
 import (
+	"cmp"
 	"maps"
 	"slices"
 	"strings"
@@ -240,36 +241,63 @@ func declarationsBytes(t *testing.T, request []byte) string {
 
 // A given request is held to the envelope the host writes: in the resolved
 // form, the five members with declarations an array; in the facts form, the
-// four, with no declarations.
+// four, with no declarations. Its selector is the one the host writes for
+// the manifest, its options are valid against the manifest's schema, and a
+// manifest that runs each environment is given exactly one resolved
+// document, whose environment the request is for.
 func TestGivenRequestEnvelope(t *testing.T) {
 	f := newFixture(t)
 	resolved := f.manifest(requestMode, map[string]any{"environments": "all"})
+	each := f.manifest(requestMode, nil)
 	facts := f.manifest(requestMode, map[string]any{"input": "factsContracts", "environments": nil})
-	const envelope = `"emitRequestVersion":"1.0.0","emitter":{"id":"https://example.invalid/emitters/test","version":"1.0.0"},"options":{}`
+	unwritten := f.manifest(requestMode, map[string]any{"environments": "all", "requestVersions": []any{"9.0.0"}})
+	const emitter = `"emitter":{"id":"https://example.invalid/emitters/test","version":"1.0.0"}`
+	const envelope = `"emitRequestVersion":"1.0.0",` + emitter + `,"options":{}`
+	const dev = `{"environment":"dev"}`
 	cases := map[string]struct {
-		m       *emit.Manifest
-		request string
-		pointer string // "-" for none refused
+		m        *emit.Manifest
+		request  string
+		pointer  string // "-" for none refused
+		code     string // EMIT-REQUEST when empty
+		document string // the request when empty
 	}{
-		"resolved, declared":           {resolved, `{"declarations":[],` + envelope + `,"resolved":[]}`, "-"},
-		"resolved, no declarations":    {resolved, `{` + envelope + `,"resolved":[]}`, ""},
-		"resolved, declarations {}":    {resolved, `{"declarations":{},` + envelope + `,"resolved":[]}`, "/declarations"},
-		"resolved, a member in place":  {resolved, `{"factsContracts":[],` + envelope + `,"resolved":[]}`, "/declarations"},
-		"facts":                        {facts, `{` + envelope + `,"factsContracts":[]}`, "-"},
-		"facts, with declarations":     {facts, `{"declarations":[],` + envelope + `,"factsContracts":[]}`, ""},
-		"resolved, declared, unsorted": {resolved, `{"resolved":[],` + envelope + `,"declarations":[]}`, "-"},
+		"not admitted, a repeated member": {resolved, `{"declarations":[],"declarations":[],` + envelope + `,"resolved":[]}`, "/declarations", "", ""},
+		"another request version": {resolved, `{"declarations":[],"emitRequestVersion":"1.1.0",` + emitter + `,"options":{},"resolved":[]}`,
+			"/emitRequestVersion", "EMIT-REQUEST-VERSION", ""},
+		"a manifest of no version the host writes": {unwritten, `{"declarations":[],` + envelope + `,"resolved":[]}`,
+			"/requestVersions", "EMIT-REQUEST-VERSION", emit.DocumentManifest},
+		"no options, a member in place": {resolved, `{"declarations":[],"emitRequestVersion":"1.0.0",` + emitter + `,"other":{},"resolved":[]}`, "/options", "", ""},
+		"options the schema refuses": {resolved, `{"declarations":[],"emitRequestVersion":"1.0.0",` + emitter + `,"options":{"other":true},"resolved":[]}`,
+			"/other", "EMIT-OPTIONS", emit.DocumentOptions},
+		"resolved {}":                  {resolved, `{"declarations":[],` + envelope + `,"resolved":{}}`, "/resolved", "", ""},
+		"each, one document":           {each, `{"declarations":[],` + envelope + `,"resolved":[` + dev + `]}`, "-", "", ""},
+		"each, no document":            {each, `{"declarations":[],` + envelope + `,"resolved":[]}`, "/resolved", "", ""},
+		"each, two documents":          {each, `{"declarations":[],` + envelope + `,"resolved":[` + dev + `,` + dev + `]}`, "/resolved", "", ""},
+		"each, no environment":         {each, `{"declarations":[],` + envelope + `,"resolved":[{}]}`, "/resolved", "", ""},
+		"each, a document not object":  {each, `{"declarations":[],` + envelope + `,"resolved":["dev"]}`, "/resolved", "", ""},
+		"resolved, declared":           {resolved, `{"declarations":[],` + envelope + `,"resolved":[]}`, "-", "", ""},
+		"resolved, no declarations":    {resolved, `{` + envelope + `,"resolved":[]}`, "", "", ""},
+		"resolved, declarations {}":    {resolved, `{"declarations":{},` + envelope + `,"resolved":[]}`, "/declarations", "", ""},
+		"resolved, a member in place":  {resolved, `{"factsContracts":[],` + envelope + `,"resolved":[]}`, "/declarations", "", ""},
+		"facts":                        {facts, `{` + envelope + `,"factsContracts":[]}`, "-", "", ""},
+		"facts, with declarations":     {facts, `{"declarations":[],` + envelope + `,"factsContracts":[]}`, "", "", ""},
+		"resolved, declared, unsorted": {resolved, `{"resolved":[],` + envelope + `,"declarations":[]}`, "-", "", ""},
 	}
 	for name, c := range cases {
 		t.Run(name, func(t *testing.T) {
 			request, refused := givenRequest([]byte(c.request), c.m)
 			if c.pointer == "-" {
-				if len(refused) != 0 || !strings.HasPrefix(string(request.Bytes), `{"declarations":[],`) && c.m == resolved {
+				if len(refused) != 0 || !strings.HasPrefix(string(request.Bytes), `{"declarations":[],`) && c.m != facts {
 					t.Fatalf("refused %+v, bytes %s", refused, request.Bytes)
+				}
+				if want := map[*emit.Manifest]string{each: "dev"}[c.m]; request.Environment != want {
+					t.Fatalf("environment %q, want %q", request.Environment, want)
 				}
 				return
 			}
-			if len(refused) != 1 || refused[0].Code != "EMIT-REQUEST" || refused[0].Location.Pointer != c.pointer {
-				t.Fatalf("refused: %+v", refused)
+			code, document := cmp.Or(c.code, "EMIT-REQUEST"), cmp.Or(c.document, emit.DocumentRequest)
+			if len(refused) != 1 || refused[0].Code != code || refused[0].Location.Document != document || refused[0].Location.Pointer != c.pointer {
+				t.Fatalf("refused: %+v, want %s in %s at %q", refused, code, document, c.pointer)
 			}
 		})
 	}
