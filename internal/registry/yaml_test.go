@@ -530,9 +530,53 @@ func exactlyAdmitted(literal string) bool {
 	return ok && shortest.Cmp(exact) == 0
 }
 
+// exactlyAdmittedLiteral is the literal admission keeps under the exact rule:
+// an integer as written, zero as 0, and any other number as the RFC 8785 form
+// of its value, laid out here by string operations from the double's
+// shortest digits rather than by jcs.AppendNumber.
+func exactlyAdmittedLiteral(literal string) (string, bool) {
+	if !exactlyAdmitted(literal) {
+		return "", false
+	}
+	if !strings.ContainsAny(literal, ".eE") {
+		return literal, true
+	}
+	double, _ := strconv.ParseFloat(literal, 64)
+	if double == 0 {
+		return "0", true
+	}
+	sign := ""
+	if double < 0 {
+		sign, double = "-", -double
+	}
+	mantissa, exponentText, _ := strings.Cut(strconv.FormatFloat(double, 'e', -1, 64), "e")
+	digits := strings.Replace(mantissa, ".", "", 1)
+	exponent, _ := strconv.Atoi(exponentText)
+	k, n := len(digits), exponent+1
+	switch {
+	case k <= n && n <= 21:
+		return sign + digits + strings.Repeat("0", n-k), true
+	case 0 < n && n <= 21:
+		return sign + digits[:n] + "." + digits[n:], true
+	case -6 < n && n <= 0:
+		return sign + "0." + strings.Repeat("0", -n) + digits, true
+	}
+	form := sign + digits[:1]
+	if k > 1 {
+		form += "." + digits[1:]
+	}
+	if n-1 >= 0 {
+		form += "e+"
+	} else {
+		form += "e"
+	}
+	return form + strconv.Itoa(n-1), true
+}
+
 // The bounds refuse only what the exact rule refuses: at the edges of the
 // doubles, at the 17-digit and 2^53 boundaries, and on literals built around
-// many doubles' shortest forms.
+// many doubles' shortest forms. What they admit is kept as the exact rule's
+// literal, byte for byte.
 func TestAdmittedNumberBoundsKeepTheExactRule(t *testing.T) {
 	literals := []string{
 		"0", "-0", "0.0", "-0.0", "0e5", "-0E-5", "0.000e999", "1", "-1", "100", "1.50", "0.1", "1e-7", "1E+2", "1e0",
@@ -557,10 +601,24 @@ func TestAdmittedNumberBoundsKeepTheExactRule(t *testing.T) {
 			// A digit more, which no longer reads back as the same text.
 			mantissa+"1e"+exponent, strconv.FormatFloat(double, 'e', 17, 64), strconv.FormatFloat(double, 'e', 16, 64))
 	}
+	kept := 0
 	for _, literal := range literals {
 		if got, want := admittedNumber(json.Number(literal)), exactlyAdmitted(literal); got != want {
 			t.Errorf("%s: admitted %v, the exact rule says %v", literal, got, want)
 		}
+		got, ok := admittedLiteral(json.Number(literal))
+		want, wantOK := exactlyAdmittedLiteral(literal)
+		if ok != wantOK || ok && string(got) != want {
+			t.Errorf("%s: kept %q %v, the exact rule keeps %q %v", literal, got, ok, want, wantOK)
+		}
+		if ok && string(got) != literal {
+			kept++
+		}
+	}
+	// Some admitted literals are rewritten, so the comparison is of more than
+	// the text as written.
+	if kept < 1000 {
+		t.Errorf("only %d admitted literals were rewritten", kept)
 	}
 	// Outside JSON's grammar, nothing is admitted.
 	for _, literal := range []string{"", "-", "+5", "01", "-01", "1.", ".5", "1e", "1e+", "0x10", "1/2", "Infinity", "NaN", "1 ", " 1", "1_0", "1.5.0"} {
