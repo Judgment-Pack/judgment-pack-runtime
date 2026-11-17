@@ -160,6 +160,7 @@ run the mutants; a reviewer does.
 | `EMIT-PATH-UNREADABLE` | error | `./internal/emit/conformance` | `TestStrayWriteRowStaysWhenTheCopyCannotBeMadeAgain` | `internal/emit/conformance/stray.go:fresh` | every `"EMIT-PATH-UNREADABLE"` becomes `"EMIT-HARNESS-BOUND"` | yes |
 | `EMIT-WRITE` | error | `./internal/emit` | `TestEmitDeletesOnlyOwnedFilesAndStopsAtAnUnownedBlocker` | `internal/emit/files.go:write` | every `"EMIT-WRITE"` becomes `"EMIT-LINK"` | yes |
 | `EMIT-REPORT-TRUNCATED` | warning | `./internal/emit` | `TestEmitHoldsTheReportedDiagnosticsToTheirBound` | `internal/emit/host.go:finish` | every `"EMIT-REPORT-TRUNCATED"` becomes `"EMIT-ENV-UNSET"` | yes |
+| `EMIT-STAGING-LEFTOVER` | warning | `./internal/emit` | `TestEmitReportsStagingLeftoversItDoesNotOwn` | `internal/emit/host.go:Emit` | every `"EMIT-STAGING-LEFTOVER"` becomes `"EMIT-REPORT-TRUNCATED"` | yes |
 | `EMIT-VECTOR` | error | `./internal/emit/conformance` | `TestVectorLayoutRefusals` | `internal/emit/conformance/vectors.go:layoutVector` | every `"EMIT-VECTOR"` becomes `"EMIT-PATH-UNREADABLE"` | yes |
 | `EMIT-HARNESS-BOUND` | error | `./internal/emit/conformance` | `TestReferencesBound` | `internal/emit/conformance/references.go:references` | every `"EMIT-HARNESS-BOUND"` becomes `"EMIT-VECTOR"` | yes |
 | `TF-SIZE` | error | `./internal/terraformfile` | `TestEveryRefusalCodeIsReported` | `internal/terraformfile/read.go:read` | every `CodeSize` becomes `CodeJSON` | yes |

@@ -130,8 +130,9 @@ func ReadFile(path string) (Secret, error) {
 
 // ReadFileWith is [ReadFile] under rules: with rules.AllowOtherRead, a file
 // others may read is accepted rather than refused [ErrWorldReadable]. Every
-// other check stands, a file others may write among them ([ErrWorldWritable]), and a file whose permission bits cannot be checked is
-// still refused [ErrPermissionsUnknown].
+// other check stands, a file others may write among them
+// ([ErrWorldWritable]), and a file whose permission bits cannot be checked
+// is still refused [ErrPermissionsUnknown].
 func ReadFileWith(path string, rules FileRules) (Secret, error) {
 	info, err := os.Stat(path)
 	if err != nil {
