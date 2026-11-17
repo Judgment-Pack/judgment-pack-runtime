@@ -2,7 +2,7 @@
 
 All notable changes to tagged releases are documented here.
 
-## Unreleased
+## 0.49.0 - 2026-11-17
 
 - **`TF-VALUE-LIMIT`'s message names both bounds.** It named only the 268435456-byte cap, even
   when the bound that applied was sixteen times the file; it now names the lesser of the two, and
@@ -72,8 +72,9 @@ All notable changes to tagged releases are documented here.
   `expected/` are listed under a bound on their entries, directories included. The TypeScript
   constants emitter counts its depth bound of 34 in containers only. In the start-up module,
   `ReadFile` refuses a world-writable file under every rule, and `ReadResolvedFile` refuses a
-  file that is not regular without blocking on it. The conformance claim in CONFORMANCE.md is
-  unchanged.
+  file that is not regular without blocking on it. `ErrNotRegular`'s text is now "startup: the
+  file is not a regular file", where it said "the secret file"; match it with `errors.Is`, not
+  its text. The conformance claim in CONFORMANCE.md is unchanged.
 - **Coverage floors for the registry and emitter packages.** A `coverage-floors` check in
   `dev.json` runs the tests of `internal/registry`, `internal/emit/conformance`,
   `internal/terraformfile`, `internal/jcs`, `cmd/jpack-emit-go-facts`, `cmd/jpack-emit-go-loader`
@@ -88,8 +89,10 @@ All notable changes to tagged releases are documented here.
 - **An emitter's options schema may use `$defs` at its root** (#459). An options schema is a
   schema in the kind subset, which admits `$defs` at the schema's root, but `jpack emit` and `jpack
   emit conformance` refused a root `$defs` in a manifest's `options` with `EMIT-MANIFEST`. It is now
-  read, and `$ref` into it is followed; a `$defs` below the root is still refused. The conformance
-  claim in CONFORMANCE.md is unchanged.
+  read, and `$ref` into it is followed. A `$defs` below the root is refused with `EMIT-MANIFEST`
+  at its pointer, such as `/options/items/$defs`. That includes one a single level below the root,
+  under `items`, `not` or `additionalProperties` for example, which v0.48.0 admitted by mistake;
+  the kind subset does not. The conformance claim in CONFORMANCE.md is unchanged.
 - **A mutation table for the registry line's codes** (docs/registry-mutation-table.md). Each
   `REG-*`, `REF-*`, `FACTS-*`, `EMIT-*` and `TF-*` code, and each code of the `jpack-emit-*`
   emitters, has one row: its severity, the test that asserts it, a recorded mutant that test
