@@ -6,7 +6,10 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"strconv"
 	"strings"
+	"unicode"
+	"unicode/utf16"
 	"unicode/utf8"
 
 	"github.com/Judgment-Pack/judgment-pack-runtime/internal/display"
@@ -43,12 +46,49 @@ func (f *Failure) Error() string {
 	return f.Diagnostic.Message
 }
 
+// parser is one decode. A document that is valid JSON is read from data
+// directly, at offset at; any other is read through the standard decoder's
+// tokens, so that its syntax error is the decoder's own. Either way, path is
+// the location of the value being read, step by step, made into a pointer
+// only for a refusal that reports one.
 type parser struct {
 	decoder  *json.Decoder
 	limits   Limits
 	nodes    int
 	data     []byte
+	at       int
 	rootScan bool
+	path     []step
+}
+
+// step is one step of a location: a member's name, or an array's index when
+// index is not negative.
+type step struct {
+	name  string
+	index int
+}
+
+func (p *parser) enter(name string, index int) {
+	p.path = append(p.path, step{name: name, index: index})
+}
+
+func (p *parser) leave() {
+	p.path = p.path[:len(p.path)-1]
+}
+
+// pointer is the JSON Pointer of the value being read.
+func (p *parser) pointer() string {
+	if len(p.path) == 0 {
+		return ""
+	}
+	parts := make([]string, len(p.path))
+	for i, step := range p.path {
+		parts[i] = step.name
+		if step.index >= 0 {
+			parts[i] = strconv.Itoa(step.index)
+		}
+	}
+	return Pointer(parts)
 }
 
 func Decode(data []byte, limits Limits) (any, *Failure) {
@@ -67,15 +107,12 @@ func decode(data []byte, limits Limits, rootScan bool) (any, *Failure) {
 	if !utf8.Valid(data) {
 		return nil, invalid("JPS-CARRIER-INVALID-JSON", "", "Input is not valid UTF-8 JSON.")
 	}
-	decoder := json.NewDecoder(bytes.NewReader(data))
-	decoder.UseNumber()
-	p := parser{decoder: decoder, limits: limits, data: data, rootScan: rootScan}
-	value, failure := p.value(nil, 0)
+	value, failure := decodeValid(data, limits, rootScan)
+	if failure == errUnread {
+		value, failure = decodeTokens(data, limits, rootScan)
+	}
 	if failure != nil {
 		return nil, failure
-	}
-	if _, err := decoder.Token(); !errors.Is(err, io.EOF) {
-		return nil, invalid("JPS-CARRIER-INVALID-JSON", "", "Input contains trailing data after the JSON value.")
 	}
 	// The surrogate scan runs last, over bytes now known to be well-formed JSON,
 	// so its string tracking is exact rather than a guess about where a string
@@ -177,46 +214,326 @@ func hexQuad(data []byte, start int) (int, bool) {
 	return value, true
 }
 
-func (p *parser) value(location []string, depth int) (any, *Failure) {
+// errUnread is decodeValid's: the document is not one it reads, and the
+// standard decoder's tokens read it instead.
+var errUnread = &Failure{}
+
+// decodeValid reads a document that is valid JSON straight from its bytes:
+// the standard decoder allocates a syntax error for every value it ends at
+// a delimiter, which a valid document never reports. It refuses what the
+// token reading refuses, at the same location, and gives the same value: the
+// same nodes counted in the same order, the same strings and number literals.
+// A document that is not valid JSON, or that this reading does not finish, is
+// errUnread.
+func decodeValid(data []byte, limits Limits, rootScan bool) (any, *Failure) {
+	if !json.Valid(data) {
+		return nil, errUnread
+	}
+	p := parser{limits: limits, data: data, rootScan: rootScan}
+	value, failure := p.read(0)
+	if failure != nil {
+		return nil, failure
+	}
+	if p.space(); p.at != len(data) {
+		return nil, errUnread
+	}
+	return value, nil
+}
+
+// decodeTokens reads a document through the standard decoder's tokens: for a
+// document that is not valid JSON, the decoder names the defect and where.
+func decodeTokens(data []byte, limits Limits, rootScan bool) (any, *Failure) {
+	decoder := json.NewDecoder(bytes.NewReader(data))
+	decoder.UseNumber()
+	p := parser{decoder: decoder, limits: limits, data: data, rootScan: rootScan}
+	value, failure := p.value(0)
+	if failure != nil {
+		return nil, failure
+	}
+	if _, err := decoder.Token(); !errors.Is(err, io.EOF) {
+		return nil, invalid("JPS-CARRIER-INVALID-JSON", "", "Input contains trailing data after the JSON value.")
+	}
+	return value, nil
+}
+
+// read is value over valid JSON's bytes.
+func (p *parser) read(depth int) (any, *Failure) {
 	if p.nodes >= p.limits.MaxNodes {
-		return nil, resource("JPS-RESOURCE-NODE-LIMIT", Pointer(location), "Input exceeds the configured JSON node limit.")
+		return nil, resource("JPS-RESOURCE-NODE-LIMIT", p.pointer(), "Input exceeds the configured JSON node limit.")
+	}
+	p.nodes++
+	if p.space(); p.at >= len(p.data) {
+		return nil, errUnread
+	}
+	switch c := p.data[p.at]; c {
+	case '{', '[':
+		if depth >= p.limits.MaxDepth {
+			return nil, resource("JPS-RESOURCE-DEPTH-LIMIT", p.pointer(), "Input exceeds the configured JSON nesting limit.")
+		}
+		p.at++
+		if c == '{' {
+			return p.readObject(depth + 1)
+		}
+		return p.readArray(depth + 1)
+	case '"':
+		text, ok := p.readString()
+		if !ok {
+			return nil, errUnread
+		}
+		if len(text) > p.limits.MaxStringBytes {
+			return nil, resource("JPS-RESOURCE-STRING-LIMIT", p.pointer(), "Input contains a string exceeding the configured limit.")
+		}
+		return text, nil
+	case 't':
+		return p.literal("true", true)
+	case 'f':
+		return p.literal("false", false)
+	case 'n':
+		return p.literal("null", nil)
+	default:
+		start := p.at
+		for p.at < len(p.data) && strings.IndexByte("+-.0123456789Ee", p.data[p.at]) >= 0 {
+			p.at++
+		}
+		if p.at == start {
+			return nil, errUnread
+		}
+		if p.at-start > p.limits.MaxStringBytes {
+			return nil, resource("JPS-RESOURCE-NUMBER-LIMIT", p.pointer(), "Input contains a number token exceeding the configured limit.")
+		}
+		return json.Number(p.data[start:p.at]), nil
+	}
+}
+
+func (p *parser) literal(text string, value any) (any, *Failure) {
+	if len(p.data)-p.at < len(text) || string(p.data[p.at:p.at+len(text)]) != text {
+		return nil, errUnread
+	}
+	p.at += len(text)
+	return value, nil
+}
+
+func (p *parser) readObject(depth int) (map[string]any, *Failure) {
+	value := map[string]any{}
+	var seen map[string]bool
+	if p.rootScan {
+		seen = map[string]bool{}
+	}
+	if p.space(); p.next('}') {
+		return value, nil
+	}
+	for {
+		if p.space(); p.at >= len(p.data) || p.data[p.at] != '"' {
+			return nil, errUnread
+		}
+		key, ok := p.readString()
+		if !ok {
+			return nil, errUnread
+		}
+		p.enter(key, -1)
+		if len(key) > p.limits.MaxStringBytes {
+			return nil, resource("JPS-RESOURCE-STRING-LIMIT", p.pointer(), "Input contains an object member name exceeding the configured limit.")
+		}
+		_, exists := value[key]
+		if p.rootScan {
+			exists = seen[key]
+		}
+		if exists {
+			return nil, invalid("JPS-CARRIER-DUPLICATE-MEMBER", p.pointer(), "Object member name is duplicated.")
+		}
+		if p.rootScan {
+			seen[key] = true
+		}
+		if p.space(); !p.next(':') {
+			return nil, errUnread
+		}
+		item, failure := p.read(depth)
+		if failure != nil {
+			return nil, failure
+		}
+		p.leave()
+		if !p.rootScan || depth == 1 && (key == "specVersion" || key == "profile") {
+			value[key] = item
+		}
+		switch p.space(); {
+		case p.next(','):
+		case p.next('}'):
+			return value, nil
+		default:
+			return nil, errUnread
+		}
+	}
+}
+
+func (p *parser) readArray(depth int) ([]any, *Failure) {
+	value := []any{}
+	if p.space(); p.next(']') {
+		return value, nil
+	}
+	for index := 0; ; index++ {
+		p.enter("", index)
+		item, failure := p.read(depth)
+		if failure != nil {
+			return nil, failure
+		}
+		p.leave()
+		if !p.rootScan {
+			value = append(value, item)
+		}
+		switch p.space(); {
+		case p.next(','):
+		case p.next(']'):
+			return value, nil
+		default:
+			return nil, errUnread
+		}
+	}
+}
+
+// space skips JSON whitespace.
+func (p *parser) space() {
+	for p.at < len(p.data) {
+		switch p.data[p.at] {
+		case ' ', '\t', '\n', '\r':
+			p.at++
+		default:
+			return
+		}
+	}
+}
+
+// next consumes c if it is the next byte.
+func (p *parser) next(c byte) bool {
+	if p.at < len(p.data) && p.data[p.at] == c {
+		p.at++
+		return true
+	}
+	return false
+}
+
+// readString reads the string at p.at, its quotes included, as the standard
+// decoder unquotes one: each escape replaced, a surrogate pair joined into
+// its code point, and any other surrogate escape replaced by U+FFFD (the
+// surrogate scan refuses the document afterwards). A string with no escape
+// is its bytes.
+func (p *parser) readString() (string, bool) {
+	start := p.at + 1
+	end := start
+	escaped := false
+	for {
+		if end >= len(p.data) {
+			return "", false
+		}
+		switch p.data[end] {
+		case '"':
+			p.at = end + 1
+			if !escaped {
+				return string(p.data[start:end]), true
+			}
+			return unquote(p.data[start:end])
+		case '\\':
+			escaped = true
+			end += 2
+			continue
+		}
+		end++
+	}
+}
+
+// unquote replaces a string's escapes, as the standard decoder does.
+func unquote(raw []byte) (string, bool) {
+	var out strings.Builder
+	out.Grow(len(raw))
+	for i := 0; i < len(raw); {
+		c := raw[i]
+		if c != '\\' {
+			out.WriteByte(c)
+			i++
+			continue
+		}
+		if i+1 >= len(raw) {
+			return "", false
+		}
+		switch raw[i+1] {
+		case '"', '\\', '/':
+			out.WriteByte(raw[i+1])
+		case 'b':
+			out.WriteByte('\b')
+		case 'f':
+			out.WriteByte('\f')
+		case 'n':
+			out.WriteByte('\n')
+		case 'r':
+			out.WriteByte('\r')
+		case 't':
+			out.WriteByte('\t')
+		case 'u':
+			code, ok := hexQuad(raw, i+2)
+			if !ok {
+				return "", false
+			}
+			i += 6
+			r := rune(code)
+			if utf16.IsSurrogate(r) {
+				if low, ok := hexQuad(raw, i+2); ok && raw[i] == '\\' && raw[i+1] == 'u' {
+					if pair := utf16.DecodeRune(r, rune(low)); pair != unicode.ReplacementChar {
+						out.WriteRune(pair)
+						i += 6
+						continue
+					}
+				}
+				r = unicode.ReplacementChar
+			}
+			out.WriteRune(r)
+			continue
+		default:
+			return "", false
+		}
+		i += 2
+	}
+	return out.String(), true
+}
+
+func (p *parser) value(depth int) (any, *Failure) {
+	if p.nodes >= p.limits.MaxNodes {
+		return nil, resource("JPS-RESOURCE-NODE-LIMIT", p.pointer(), "Input exceeds the configured JSON node limit.")
 	}
 	p.nodes++
 	token, err := p.decoder.Token()
 	if err != nil {
-		return nil, p.invalidJSON(Pointer(location), "", err)
+		return nil, p.invalidJSON(p.pointer(), "", err)
 	}
 	switch typed := token.(type) {
 	case json.Delim:
 		if depth >= p.limits.MaxDepth {
-			return nil, resource("JPS-RESOURCE-DEPTH-LIMIT", Pointer(location), "Input exceeds the configured JSON nesting limit.")
+			return nil, resource("JPS-RESOURCE-DEPTH-LIMIT", p.pointer(), "Input exceeds the configured JSON nesting limit.")
 		}
 		switch typed {
 		case '{':
-			return p.object(location, depth+1)
+			return p.object(depth + 1)
 		case '[':
-			return p.array(location, depth+1)
+			return p.array(depth + 1)
 		default:
-			return nil, p.invalidJSON(Pointer(location), "unexpected JSON delimiter", nil)
+			return nil, p.invalidJSON(p.pointer(), "unexpected JSON delimiter", nil)
 		}
 	case string:
 		if len(typed) > p.limits.MaxStringBytes {
-			return nil, resource("JPS-RESOURCE-STRING-LIMIT", Pointer(location), "Input contains a string exceeding the configured limit.")
+			return nil, resource("JPS-RESOURCE-STRING-LIMIT", p.pointer(), "Input contains a string exceeding the configured limit.")
 		}
 		return typed, nil
 	case json.Number:
 		if len(typed.String()) > p.limits.MaxStringBytes {
-			return nil, resource("JPS-RESOURCE-NUMBER-LIMIT", Pointer(location), "Input contains a number token exceeding the configured limit.")
+			return nil, resource("JPS-RESOURCE-NUMBER-LIMIT", p.pointer(), "Input contains a number token exceeding the configured limit.")
 		}
 		return typed, nil
 	case bool, nil:
 		return typed, nil
 	default:
-		return nil, p.invalidJSON(Pointer(location), "value outside the JSON data model", nil)
+		return nil, p.invalidJSON(p.pointer(), "value outside the JSON data model", nil)
 	}
 }
 
-func (p *parser) object(location []string, depth int) (map[string]any, *Failure) {
+func (p *parser) object(depth int) (map[string]any, *Failure) {
 	value := map[string]any{}
 	var seen map[string]bool
 	if p.rootScan {
@@ -225,54 +542,56 @@ func (p *parser) object(location []string, depth int) (map[string]any, *Failure)
 	for p.decoder.More() {
 		token, err := p.decoder.Token()
 		if err != nil {
-			return nil, p.invalidJSON(Pointer(location), "", err)
+			return nil, p.invalidJSON(p.pointer(), "", err)
 		}
 		key, ok := token.(string)
 		if !ok {
-			return nil, p.invalidJSON(Pointer(location), "object member name is not a string", nil)
+			return nil, p.invalidJSON(p.pointer(), "object member name is not a string", nil)
 		}
-		memberLocation := appendLocation(location, key)
+		p.enter(key, -1)
 		if len(key) > p.limits.MaxStringBytes {
-			return nil, resource("JPS-RESOURCE-STRING-LIMIT", Pointer(memberLocation), "Input contains an object member name exceeding the configured limit.")
+			return nil, resource("JPS-RESOURCE-STRING-LIMIT", p.pointer(), "Input contains an object member name exceeding the configured limit.")
 		}
 		_, exists := value[key]
 		if p.rootScan {
 			exists = seen[key]
 		}
 		if exists {
-			return nil, invalid("JPS-CARRIER-DUPLICATE-MEMBER", Pointer(memberLocation), "Object member name is duplicated.")
+			return nil, invalid("JPS-CARRIER-DUPLICATE-MEMBER", p.pointer(), "Object member name is duplicated.")
 		}
 		if p.rootScan {
 			seen[key] = true
 		}
-		item, failure := p.value(memberLocation, depth)
+		item, failure := p.value(depth)
 		if failure != nil {
 			return nil, failure
 		}
+		p.leave()
 		if !p.rootScan || depth == 1 && (key == "specVersion" || key == "profile") {
 			value[key] = item
 		}
 	}
 	if token, err := p.decoder.Token(); err != nil || token != json.Delim('}') {
-		return nil, p.invalidJSON(Pointer(location), "expected the end of the object", err)
+		return nil, p.invalidJSON(p.pointer(), "expected the end of the object", err)
 	}
 	return value, nil
 }
 
-func (p *parser) array(location []string, depth int) ([]any, *Failure) {
+func (p *parser) array(depth int) ([]any, *Failure) {
 	value := []any{}
 	for index := 0; p.decoder.More(); index++ {
-		itemLocation := appendLocation(location, fmt.Sprint(index))
-		item, failure := p.value(itemLocation, depth)
+		p.enter("", index)
+		item, failure := p.value(depth)
 		if failure != nil {
 			return nil, failure
 		}
+		p.leave()
 		if !p.rootScan {
 			value = append(value, item)
 		}
 	}
 	if token, err := p.decoder.Token(); err != nil || token != json.Delim(']') {
-		return nil, p.invalidJSON(Pointer(location), "expected the end of the array", err)
+		return nil, p.invalidJSON(p.pointer(), "expected the end of the array", err)
 	}
 	return value, nil
 }
@@ -297,11 +616,6 @@ func Pointer(parts []string) string {
 		}
 	}
 	return value.String()
-}
-
-func appendLocation(location []string, part string) []string {
-	copyOfLocation := append([]string(nil), location...)
-	return append(copyOfLocation, part)
 }
 
 func invalid(code, location, message string) *Failure {

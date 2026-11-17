@@ -436,6 +436,10 @@ func allocatesWithin(t *testing.T, budget uint64, name string, f func()) {
 // REG-DOC-NUMBER.
 func TestAdmissionHoldsALongNumberQuickly(t *testing.T) {
 	const longNumberBudget = 128 << 20 // the worst case measured 72 MiB
+	// JSON's share: reading the document costs about twice its 8 MiB, 16 MiB
+	// measured; 48 MiB while the decoder read it through the standard
+	// decoder's tokens.
+	const jsonLongNumberBudget = 32 << 20
 	head, tail := `{"registryFormatVersion":"1.0.0","a":`, `}`
 	room := MaxRegistryBytes - len(head) - len(tail) - 8
 	numberCodes := func(diagnostics []Diagnostic) int {
@@ -462,7 +466,7 @@ func TestAdmissionHoldsALongNumberQuickly(t *testing.T) {
 		{"an exponent past any machine integer", "1e" + strings.Repeat("9", room), false},
 		{"a long significand and a huge exponent", "1." + strings.Repeat("0", room/2) + "e999999999", false},
 	} {
-		allocatesWithin(t, longNumberBudget, "JSON "+row.name, func() {
+		allocatesWithin(t, jsonLongNumberBudget, "JSON "+row.name, func() {
 			result := Validate([]byte(head+row.number+tail), nil)
 			if got := numberCodes(result.Report.Diagnostics); (got == 0) != row.admitted || got > 1 {
 				t.Errorf("JSON %s: %d REG-DOC-NUMBER, want admitted %v", row.name, got, row.admitted)
@@ -472,7 +476,7 @@ func TestAdmissionHoldsALongNumberQuickly(t *testing.T) {
 	// big.Rat refuses an exponent past 10^6 itself, but one just under it
 	// costs tens of milliseconds, and a document holds a million numbers.
 	many := 5000
-	allocatesWithin(t, longNumberBudget, "JSON many exponents under big.Rat's own cap", func() {
+	allocatesWithin(t, jsonLongNumberBudget, "JSON many exponents under big.Rat's own cap", func() {
 		// Every number is counted, so the report bound is lifted: the
 		// time is the same either way, since every check runs.
 		var result *Result

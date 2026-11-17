@@ -400,13 +400,14 @@ func TestGivenRequestRefusesAnExpandingFormWithoutBuildingIt(t *testing.T) {
 		if total > admission+bound {
 			t.Errorf("%s: refusing allocated %d bytes past the %d of admission, more than the bound of %d", name, total-admission, admission, bound)
 		}
-		// The factor: the decoder every reader shares costs 50 to 130 times
+		// The factor: the decoder every reader shares costs 10 to 51 times
 		// a document's bytes to read one of small values into a tree, the
 		// same whether its numbers expand or not. This request measures
-		// about 75 times the bound; 128 is generous, and the 276 times it
-		// cost before fails it.
-		if total > 128*bound {
-			t.Errorf("%s: %d bytes allocated, more than 128 times the bound", name, total)
+		// about 30 times the bound; 48 leaves room, and the 75 times it cost
+		// while the decoder read every value through the standard decoder's
+		// tokens fails it, as do the 276 times before that.
+		if total > 48*bound {
+			t.Errorf("%s: %d bytes allocated, more than 48 times the bound", name, total)
 		}
 	}
 
