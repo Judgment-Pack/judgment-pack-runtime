@@ -122,14 +122,11 @@ func Run(ctx context.Context, m *emit.Manifest, vectorsDir string, opts Options)
 	if len(refused) > 0 {
 		return report.Refuse(refused...)
 	}
-	ws, failure := newWorkspace(opts.Root, linkNamer(m, opts.Root, vectorsDir))
+	ws, failure := newWorkspace(opts.Root)
 	if failure != nil {
 		return report.Refuse(*failure)
 	}
 	defer ws.close()
-	// A link that leads out of the repository, and that no path the run
-	// writes or reads could name, is left out of the copy and reported.
-	report.Diagnostics = append(report.Diagnostics, emit.ListPaths("EMIT-LINK-OMITTED", emit.DocumentRepository, ws.omitted)...)
 	reads := map[string]bool{}
 	for _, r := range m.Reads {
 		reads[r.Kind] = true

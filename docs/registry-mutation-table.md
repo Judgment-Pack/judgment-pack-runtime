@@ -163,7 +163,6 @@ run the mutants; a reviewer does.
 | `EMIT-STAGING-LEFTOVER` | warning | `./internal/emit` | `TestEmitReportsStagingLeftoversItDoesNotOwn` | `internal/emit/host.go:Emit` | every `"EMIT-STAGING-LEFTOVER"` becomes `"EMIT-REPORT-TRUNCATED"` | yes |
 | `EMIT-VECTOR` | error | `./internal/emit/conformance` | `TestVectorLayoutRefusals` | `internal/emit/conformance/vectors.go:layoutVector` | every `"EMIT-VECTOR"` becomes `"EMIT-PATH-UNREADABLE"` | yes |
 | `EMIT-HARNESS-BOUND` | error | `./internal/emit/conformance` | `TestReferencesBound` | `internal/emit/conformance/references.go:references` | every `"EMIT-HARNESS-BOUND"` becomes `"EMIT-VECTOR"` | yes |
-| `EMIT-LINK-OMITTED` | warning | `./internal/emit/conformance` | `TestALinkOutOfTheRepositoryIsLeftOut` | `internal/emit/conformance/harness.go:Run` | every `"EMIT-LINK-OMITTED"` becomes `"EMIT-HARNESS-BOUND"` | yes |
 | `TF-SIZE` | error | `./internal/terraformfile` | `TestEveryRefusalCodeIsReported` | `internal/terraformfile/read.go:read` | every `CodeSize` becomes `CodeJSON` | yes |
 | `TF-JSON` | error | `./internal/terraformfile` | `TestEveryRefusalCodeIsReported` | `internal/terraformfile/read.go:read` | every `CodeJSON` becomes `CodeFormat` | yes |
 | `TF-FORMAT` | error | `./internal/terraformfile` | `TestEveryRefusalCodeIsReported` | `internal/terraformfile/read.go:read` | every `CodeFormat` becomes `CodeDocument` | yes |

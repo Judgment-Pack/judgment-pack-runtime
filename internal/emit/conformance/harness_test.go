@@ -289,7 +289,7 @@ func TestStrayWritesCopyBound(t *testing.T) {
 func TestCopyPassesOverGit(t *testing.T) {
 	source, target := t.TempDir(), t.TempDir()
 	write(t, source, map[string]string{".git/config": "x\n", "a/.GIT/config": "x\n", "a/b.txt": "b\n"})
-	states, err := copyTree(source, target, nil)
+	states, err := copyTree(source, target)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -350,11 +350,9 @@ func TestStrayWriteThroughALinkIntoTheRepository(t *testing.T) {
 	}
 }
 
-// A link that leads out of the repository, and that no path the run writes
-// or reads could name, is left out of the copy and reported as
-// EMIT-LINK-OMITTED at its path: a write at its path lands in the copy, a
-// stray write there, and never leaves it. The link stays in the repository.
-func TestALinkOutOfTheRepositoryIsLeftOut(t *testing.T) {
+// A link that leads out of the repository refuses the run, before the
+// emitter runs: a write through it would leave the copy.
+func TestALinkOutOfTheRepositoryIsRefused(t *testing.T) {
 	outside := t.TempDir()
 	cases := map[string]struct {
 		links map[string]string
@@ -379,68 +377,14 @@ func TestALinkOutOfTheRepositoryIsLeftOut(t *testing.T) {
 			m := f.manifest([]string{"stray", "create", "out/written.txt"}, map[string]any{"environments": "all"})
 			f.registryVector("a", nil)
 			report := f.run(m, true)
-			if report.Outcome != OutcomeFail || len(report.Diagnostics) != 1 {
-				t.Fatalf("report: %s", dump(report))
-			}
-			if d := report.Diagnostics[0]; d.Code != "EMIT-LINK-OMITTED" || d.Severity != emit.SeverityWarning ||
-				d.Location != (emit.Location{Document: emit.DocumentRepository, Path: c.path}) || d.Message != emit.NewDiagnostic("EMIT-LINK-OMITTED", d.Location).Message {
-				t.Fatalf("diagnostic: %+v", d)
-			}
-			row := rowOf(t, report, "a", checkStrayWrites)
-			if want := []StrayWrite{{"EMIT-STRAY-WRITE", ".", StrayCreated}}; row.Status != StatusFail || !slices.Equal(row.StrayWrites, want) {
-				t.Fatalf("check 6: %+v", row)
-			}
-			if _, err := os.Lstat(filepath.Join(outside, "written.txt")); !os.IsNotExist(err) {
-				t.Fatalf("the emitter wrote outside the copy: %v", err)
-			}
-			for link, target := range links {
-				if got, err := os.Readlink(filepath.Join(f.root, filepath.FromSlash(link))); err != nil || got != target {
-					t.Fatalf("%s in the repository: %q %v", link, got, err)
-				}
-			}
-		})
-	}
-}
-
-// A link that leads out of the repository and that a path the run writes or
-// reads could name refuses the run with EMIT-HARNESS-BOUND at its path, before
-// the emitter runs: one at or above a path an owns glob may match, in any
-// case or by a short name the glob gives, and one the vectors directory is
-// reached through.
-func TestALinkThatThePathsOfTheRunCouldNameIsRefused(t *testing.T) {
-	cases := map[string]struct {
-		owns    []any
-		link    string
-		vectors bool
-	}{
-		"at an owned directory":        {owns: []any{"gen/**"}, link: "gen"},
-		"below it":                     {owns: []any{"gen/**"}, link: "gen/py"},
-		"above an owned file":          {owns: []any{"gen/py/a.go"}, link: "gen"},
-		"in another case":              {owns: []any{"gen/**"}, link: "Gen"},
-		"by a short name the glob has": {owns: []any{"GENERA~1/*.go"}, link: "generated"},
-		"on the way to the vectors":    {owns: []any{"gen/**"}, link: "ext", vectors: true},
-	}
-	for name, c := range cases {
-		t.Run(name, func(t *testing.T) {
-			f := newFixture(t)
-			target := t.TempDir()
-			symlinks(t, f.root, map[string]string{c.link: target})
-			if c.vectors {
-				f.vectors = filepath.Join(f.root, c.link, "vectors")
-			}
-			m := f.manifest([]string{"stray", "create", "ran.txt"}, map[string]any{"environments": "all", "owns": c.owns})
-			f.registryVector("a", nil)
-			report := f.run(m, true)
 			if report.Outcome != OutcomeNotRun || report.Exit() != ExitNotRun || len(report.Rows) != 0 || len(report.Diagnostics) != 1 {
 				t.Fatalf("report: %s", dump(report))
 			}
-			if d := report.Diagnostics[0]; d.Code != "EMIT-HARNESS-BOUND" || d.Location != (emit.Location{Document: emit.DocumentRepository, Path: c.link}) {
+			if d := report.Diagnostics[0]; d.Code != "EMIT-HARNESS-BOUND" || d.Location.Document != emit.DocumentRepository || d.Location.Path != c.path {
 				t.Fatalf("diagnostic: %+v", d)
 			}
-			for _, dir := range []string{f.root, target} {
-				if _, err := os.Lstat(filepath.Join(dir, "ran.txt")); !os.IsNotExist(err) {
-					t.Fatalf("the emitter ran: %v", err)
-				}
+			if _, err := os.Lstat(filepath.Join(outside, "written.txt")); !os.IsNotExist(err) {
+				t.Fatalf("the emitter wrote outside the copy: %v", err)
 			}
 		})
 	}
@@ -452,8 +396,7 @@ func TestALinkThatThePathsOfTheRunCouldNameIsRefused(t *testing.T) {
 // there. Here the
 // link's absolute target is in the repository, and moved into a copy whose
 // path is longer, past the system's limit on a link's target. A link that
-// leads out at an owned path is refused even when it comes after that one in
-// walk order.
+// leads out is refused even when it comes after that one in walk order.
 func TestALinkThatCannotBeMadeIsRefused(t *testing.T) {
 	limit := 4096
 	if runtime.GOOS == "darwin" {
@@ -465,7 +408,7 @@ func TestALinkThatCannotBeMadeIsRefused(t *testing.T) {
 		path string
 	}{
 		"alone":                        {false, "EMIT-PATH-UNREADABLE", "a-long"},
-		"before a link that leads out": {true, "EMIT-HARNESS-BOUND", "gen/z-out"},
+		"before a link that leads out": {true, "EMIT-HARNESS-BOUND", "z-out"},
 	}
 	for name, c := range cases {
 		t.Run(name, func(t *testing.T) {
@@ -484,8 +427,7 @@ func TestALinkThatCannotBeMadeIsRefused(t *testing.T) {
 			}
 			links := map[string]string{"a-long": target}
 			if c.out {
-				// Owned, so refused rather than left out.
-				links["gen/z-out"] = outside
+				links["z-out"] = outside
 			}
 			symlinks(t, f.root, links)
 			m := f.manifest([]string{"stray", "create", "ran.txt"}, map[string]any{"environments": "all"})
@@ -511,7 +453,7 @@ func TestCopyKeepsLinksThatStayIn(t *testing.T) {
 	write(t, source, map[string]string{"real/a.txt": "a\n"})
 	symlinks(t, source, map[string]string{"self": ".", "rel": "real/a.txt", "dangling": "real/missing", "docs/up": "../real",
 		"abs": filepath.Join(source, "real"), "root": source})
-	states, err := copyTree(source, target, nil)
+	states, err := copyTree(source, target)
 	if err != nil {
 		t.Fatal(err)
 	}

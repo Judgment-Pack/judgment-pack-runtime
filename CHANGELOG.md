@@ -4,19 +4,6 @@ All notable changes to tagged releases are documented here.
 
 ## Unreleased
 
-- **`jpack emit conformance` leaves out a link that leads out of the repository** (ADR-0099).
-  A symbolic link, or a Windows junction, that leads out of `--root` refused the whole run with
-  `EMIT-HARNESS-BOUND`, even in a place the run never touches, such as a Python virtual
-  environment inside the repository. Such a link is now left out of the repository copy the
-  emitter runs in, and the new provisional warning `EMIT-LINK-OMITTED` names it. A write the
-  emitter makes at its path is a stray write of the copy. The run is still refused at the link
-  when a path of the run could name it: when an owns glob matches the link's path or may match a
-  path below it, with names compared in any case and normalization and a glob segment holding `~`
-  read as a possible short name, or when the vectors directory is reached through it or lies at,
-  above or below it. It is also refused when the copy falls back to the repository itself. A
-  junction that stays in the repository is refused as before. The listing names at most 100
-  links; past them, one more diagnostic gives the count of the rest in its message. The
-  conformance claim in CONFORMANCE.md is unchanged.
 - **`jpack emit` reports the staging files a stopped run left** (ADR-0098). The host writes
   each file to a `.jpack-emit-*` staging file beside it and renames it into place. A run that was
   killed during its write can leave one behind. Such a file in a directory the host writes to,

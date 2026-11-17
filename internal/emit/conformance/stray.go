@@ -39,9 +39,7 @@ type unreadableError struct{ path string }
 
 func (e unreadableError) Error() string { return "conformance: a path could not be copied" }
 
-// linkOutError names a symbolic link or junction of the repository that
-// leads out of it and that a path the run writes or reads could name
-// (linkNamer), or one that leads out and was not left out of the copy.
+// linkOutError names a symbolic link of the repository that leads out of it.
 type linkOutError struct{ path string }
 
 func (e linkOutError) Error() string {
@@ -49,8 +47,7 @@ func (e linkOutError) Error() string {
 }
 
 // reparseError names a Windows reparse point of the repository that is not a
-// symbolic link and that the copy cannot hold: a junction that stays in the
-// repository, or a reparse point os.Readlink cannot read.
+// symbolic link, a junction for one, which the link check cannot follow.
 type reparseError struct{ path string }
 
 func (e reparseError) Error() string {
@@ -59,12 +56,10 @@ func (e reparseError) Error() string {
 
 // refusesReparse is check 6's rule for a Windows reparse point, by the
 // entry's mode and whether it carries FILE_ATTRIBUTE_REPARSE_POINT: one that
-// Go reads as neither a symbolic link nor a regular file is not copied. A
-// junction is one: since Go 1.23 it is ModeIrregular, not ModeSymlink.
-// checkLinks follows a junction that os.Readlink reads to where it leads,
-// leaving out of the copy one that leads out and that nothing names, and
-// refuses every other such reparse point. A symbolic link is left to the
-// link check, and a regular file stays, as Go reads a deduplicated file,
+// Go reads as neither a symbolic link nor a regular file is refused. A
+// junction is one: since Go 1.23 it is ModeIrregular, not ModeSymlink, so
+// the link check would never see where it leads. A symbolic link is left to
+// the link check, and a regular file stays, as Go reads a deduplicated file,
 // which is a reparse point too. Outside Windows no entry is a reparse point,
 // and none is ModeIrregular.
 func refusesReparse(mode fs.FileMode, reparse bool) bool {
@@ -117,45 +112,31 @@ type workspace struct {
 	root     string
 	fallback bool
 	before   map[string]entryState
-	// omitted are the links that lead out of the repository and that every
-	// copy leaves out, in walk order; omit holds them.
-	omitted []string
-	omit    map[string]bool
 }
 
 // newWorkspace copies the repository root into a fresh temporary directory,
 // passing over anything named ".git" in any case. Every link of the
 // repository is first checked to stay in it, so that one that leads out is
-// refused, whether or not the copy can be made, when named says a path the
-// run writes or reads could name it, and is otherwise left out of every
-// copy. Only Windows refusing a link for want of the privilege gets the
-// fallback, and only when no link was left out; any other link that cannot
-// be made refuses the run, naming it.
-func newWorkspace(source string, named func(string) bool) (*workspace, *emit.Diagnostic) {
-	omitted, err := checkLinks(source, named)
-	if diagnostic := copyFailure(err); diagnostic != nil {
+// refused whether or not the copy can be made, the fallback included. Only
+// Windows refusing a link for want of the privilege gets the fallback; any
+// other link that cannot be made refuses the run, naming it.
+func newWorkspace(source string) (*workspace, *emit.Diagnostic) {
+	if diagnostic := copyFailure(checkLinks(source)); diagnostic != nil {
 		return nil, diagnostic
 	}
-	w := &workspace{source: source, omitted: omitted, omit: make(map[string]bool, len(omitted))}
-	for _, name := range omitted {
-		w.omit[name] = true
-	}
+	w := &workspace{source: source}
 	if diagnostic := w.fresh(); diagnostic != nil {
 		return nil, diagnostic
 	}
 	return w, nil
 }
 
-// checkLinks walks source as copyTree does, under its entry bound. It
-// returns, in walk order, the symbolic links and junctions that lead out of
-// it and that named does not name, to be left out of the copy. It refuses
-// the first that leads out and that named names (linkOutError), and the
-// first reparse point that is neither a link nor a junction that leads out
-// (reparseError): a junction that stays in is not copied as one.
-func checkLinks(source string, named func(string) bool) ([]string, error) {
-	var omitted []string
+// checkLinks walks source as copyTree does, under its entry bound, and
+// refuses the first symbolic link that leads out of it (linkOutError), or
+// the first reparse point that is not a link (reparseError).
+func checkLinks(source string) error {
 	entries := 0
-	err := filepath.WalkDir(source, func(full string, entry fs.DirEntry, err error) error {
+	return filepath.WalkDir(source, func(full string, entry fs.DirEntry, err error) error {
 		relative, relErr := filepath.Rel(source, full)
 		if relErr != nil {
 			return relErr
@@ -176,40 +157,21 @@ func checkLinks(source string, named func(string) bool) ([]string, error) {
 		if entries++; entries > maxCopyEntries {
 			return errCopyBound
 		}
-		junction := false
 		if err := checkReparse(name, entry); err != nil {
-			var reparse reparseError
-			if !errors.As(err, &reparse) {
-				return err
-			}
-			// A junction, which os.Readlink reads, is followed as a link is.
-			if _, err := os.Readlink(full); err != nil {
-				return reparse
-			}
-			junction = true
+			return err
 		}
-		if entry.Type()&fs.ModeSymlink == 0 && !junction {
+		if entry.Type()&fs.ModeSymlink == 0 {
 			return nil
 		}
 		link, err := os.Readlink(full)
 		if err != nil {
 			return unreadableError{path: name}
 		}
-		switch out := leadsOut(source, name, link); {
-		case !out && junction:
-			return reparseError{path: name}
-		case !out:
-			return nil
-		case named(name):
+		if leadsOut(source, name, link) {
 			return linkOutError{path: name}
 		}
-		omitted = append(omitted, name)
 		return nil
 	})
-	if err != nil {
-		return nil, err
-	}
-	return omitted, nil
 }
 
 // copyFailure is the diagnostic that refuses the run for an error of
@@ -239,17 +201,6 @@ func copyFailure(err error) *emit.Diagnostic {
 // makeCopyDir makes the directory of a copy; a test makes it fail.
 var makeCopyDir = os.MkdirTemp
 
-// makeLink makes one link of a copy: errCopyLink when the system does not let
-// the user make a link, the one failure that gets the fallback. A test makes
-// it fail so.
-var makeLink = func(target, link string) error {
-	err := os.Symlink(target, link)
-	if err != nil && linkUnprivileged(err) {
-		return errCopyLink
-	}
-	return err
-}
-
 func (w *workspace) fresh() *emit.Diagnostic {
 	dir, err := makeCopyDir("", "jpack-harness-repo-")
 	if err != nil {
@@ -262,19 +213,13 @@ func (w *workspace) fresh() *emit.Diagnostic {
 		d := emit.NewDiagnostic("EMIT-PATH-UNREADABLE", emit.Location{Document: emit.DocumentRepository})
 		return &d
 	}
-	before, err := copyTree(w.source, root, w.omit)
+	before, err := copyTree(w.source, root)
 	if err != nil {
 		removeTree(dir)
 		if diagnostic := copyFailure(err); diagnostic != nil {
 			return diagnostic
 		}
-		// errCopyLink: the emitter would run in the repository itself, where
-		// a link left out of the copy leads out of it, so the run is refused
-		// at the first, as it was before links were left out. Without one,
-		// every link was checked by newWorkspace to stay in.
-		if len(w.omitted) > 0 {
-			return copyFailure(linkOutError{path: w.omitted[0]})
-		}
+		// errCopyLink: every link was checked by newWorkspace to stay in.
 		w.dir, w.root, w.fallback, w.before = "", w.source, true, nil
 		return nil
 	}
@@ -319,16 +264,15 @@ func isGitName(name string) bool { return strings.EqualFold(name, ".git") }
 
 // copyTree copies the regular files, directories and symbolic links below
 // source into target, which exists and is empty, keeping permission bits and
-// never following a link; it passes over anything named ".git", over target
-// itself, and over the paths omit holds, the links checkLinks left out. A
-// link keeps its target, except that an absolute target below source is
-// moved to the same path below target, so that a write through it stays in
-// the copy; any other link that leads out of source is refused
-// (linkOutError). A link it cannot make is unreadableError naming
+// never following a link; it passes over anything named ".git" and over
+// target itself. A link keeps its target, except that an absolute target
+// below source is moved to the same path below target, so that a write
+// through it stays in the copy; a link that leads out of source is
+// refused (linkOutError). A link it cannot make is unreadableError naming
 // it, except for the one failure of the fallback, a system that does not
 // let the user make links (errCopyLink). It returns what it copied, by slash
 // path.
-func copyTree(source, target string, omit map[string]bool) (map[string]entryState, error) {
+func copyTree(source, target string) (map[string]entryState, error) {
 	states := map[string]entryState{}
 	var total int64
 	var dirs []string
@@ -348,10 +292,6 @@ func copyTree(source, target string, omit map[string]bool) (map[string]entryStat
 			if entry.IsDir() {
 				return fs.SkipDir
 			}
-			return nil
-		}
-		if omit[name] {
-			// A link or junction: WalkDir does not go below it.
 			return nil
 		}
 		if len(states) >= maxCopyEntries {
@@ -381,8 +321,8 @@ func copyTree(source, target string, omit map[string]bool) (map[string]entryStat
 					link += string(filepath.Separator) + relative
 				}
 			}
-			if err := makeLink(link, destination); err != nil {
-				if errors.Is(err, errCopyLink) {
+			if err := os.Symlink(link, destination); err != nil {
+				if linkUnprivileged(err) {
 					return errCopyLink
 				}
 				return unreadableError{path: name}
@@ -433,9 +373,7 @@ func copyTree(source, target string, omit map[string]bool) (map[string]entryStat
 // the target link, leads out of source when it is followed there, link by
 // link: each ".." is taken from where the parts before it led, and a part
 // that does not exist is taken as written. An absolute target is taken as
-// written too, so one below source only by a link of its own leads out. A
-// junction on the way is followed as a link is, and a reparse point there
-// that os.Readlink cannot read leads out.
+// written too, so one below source only by a link of its own leads out.
 func leadsOut(source, name, link string) bool {
 	rest, ok := linkParts(source, link)
 	if !ok {
@@ -461,7 +399,7 @@ func leadsOut(source, name, link string) bool {
 		next := append(slices.Clone(at), part)
 		full := filepath.Join(append([]string{source}, next...)...)
 		info, err := os.Lstat(full)
-		if err != nil || info.Mode()&(fs.ModeSymlink|fs.ModeIrregular) == 0 {
+		if err != nil || info.Mode()&fs.ModeSymlink == 0 {
 			at = next
 			continue
 		}
