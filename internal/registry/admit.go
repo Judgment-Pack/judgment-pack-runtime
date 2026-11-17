@@ -25,11 +25,34 @@ const (
 // depth bound, the number rules, and the exact selector. It returns the
 // decoded root object, or nil after recording why not.
 func admit(data []byte, maxBytes int, selectorMember, selector string, location Location, diagnostics *collector) map[string]any {
-	if len(data) > maxBytes {
-		diagnostics.add("REG-DOC-SIZE", location)
+	value, admitted := admitValue(data, maxBytes, maxBytes, location, diagnostics)
+	if !admitted {
 		return nil
 	}
-	value, failure := carrier.Decode(data, carrier.Limits{MaxDepth: MaxDepth, MaxNodes: maxBytes, MaxStringBytes: maxBytes})
+	root, ok := value.(map[string]any)
+	if !ok {
+		diagnostics.add("REG-DOC-SELECTOR", location)
+		return nil
+	}
+	if got, ok := root[selectorMember].(string); !ok || got != selector {
+		at := location
+		at.Pointer = "/" + selectorMember
+		diagnostics.add("REG-DOC-SELECTOR", at)
+		return nil
+	}
+	return root
+}
+
+// admitValue is admit without the selector: the size bound, strict I-JSON
+// within the depth bound and at most maxNodes JSON values, and the number
+// rules. It returns the decoded value and true, or false after recording why
+// not.
+func admitValue(data []byte, maxBytes, maxNodes int, location Location, diagnostics *collector) (any, bool) {
+	if len(data) > maxBytes {
+		diagnostics.add("REG-DOC-SIZE", location)
+		return nil, false
+	}
+	value, failure := carrier.Decode(data, carrier.Limits{MaxDepth: MaxDepth, MaxNodes: maxNodes, MaxStringBytes: maxBytes})
 	if failure != nil {
 		at := location
 		at.Pointer = failure.Diagnostic.InstancePath
@@ -45,11 +68,13 @@ func admit(data []byte, maxBytes int, selectorMember, selector string, location 
 				diagnostics.add("REG-DOC-JSON", location)
 			}
 		default:
-			// The node and string limits are set to the size bound, which a
-			// document within that bound cannot exceed.
-			diagnostics.add("REG-DOC-SIZE", location)
+			// The string limit is the size bound, which a document within
+			// that bound cannot exceed; the node limit is the size bound too,
+			// or a lower one a caller sets, which refuses the document as it
+			// is decoded.
+			diagnostics.add("REG-DOC-SIZE", at)
 		}
-		return nil
+		return nil, false
 	}
 	bad := false
 	value = admitNumbers(value, nil, func(path []string) {
@@ -59,20 +84,9 @@ func admit(data []byte, maxBytes int, selectorMember, selector string, location 
 		bad = true
 	})
 	if bad {
-		return nil
+		return nil, false
 	}
-	root, ok := value.(map[string]any)
-	if !ok {
-		diagnostics.add("REG-DOC-SELECTOR", location)
-		return nil
-	}
-	if got, ok := root[selectorMember].(string); !ok || got != selector {
-		at := location
-		at.Pointer = "/" + selectorMember
-		diagnostics.add("REG-DOC-SELECTOR", at)
-		return nil
-	}
-	return root
+	return value, true
 }
 
 // admittedNumber applies RFC 0034 §1: an integer of magnitude at most 2^53-1,

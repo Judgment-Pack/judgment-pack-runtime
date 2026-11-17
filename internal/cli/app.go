@@ -151,7 +151,7 @@ func (a *App) rootCommand() *cobra.Command {
 	root.SetVersionTemplate("jpack {{.Version}}\n")
 	root.CompletionOptions.DisableDefaultCmd = true
 	root.PersistentFlags().BoolVar(&a.pretty, "pretty", false, "indent JSON output")
-	root.AddCommand(a.versionCommand(), a.artifactCommand(), a.dialectCommand(), a.specCommand(), a.packsCommand(), a.auditCommand(), a.mcpCommand(), a.registryCommand(), a.terraformCommand(), a.experimentalCommand())
+	root.AddCommand(a.versionCommand(), a.artifactCommand(), a.dialectCommand(), a.specCommand(), a.packsCommand(), a.auditCommand(), a.mcpCommand(), a.registryCommand(), a.emitCommand(), a.terraformCommand(), a.experimentalCommand())
 	return root
 }
 
