@@ -47,7 +47,7 @@ func (a *App) terraformFactsCommand() *cobra.Command {
 			"Every value marked sensitive is removed, with its member, before anything is selected, and a resource without its sensitivity mirror refuses the file. Numbers are decimal strings in one normal form. " +
 			"--type selects resources of these types (at most 64, repeat it or separate with commas), --mode managed (the default) or data resources, --address resources whose whole address matches the pattern, where * matches any run of characters other than '.', '[' and ']', " +
 			"and --actions, with --plan only, changes whose actions include one of create, update, delete, read and no-op. More selected resources than --max (1 to 10000, default 1000) refuse the file, as does a file longer than --max-bytes (1 to 268435456, default 67108864). " +
-			"Nothing is written unless every line can be: a refused file, or a resource whose facts document exceeds the facts-document limit registry facts uses (FACTS-DOCUMENT-LIMIT), writes its code, the file's sha256 and size, and a fixed message to standard error, never anything read from the file, and exits 2. " +
+			"Nothing is written unless every line can be: a refused file, a resource whose address is longer than the batch id limit of evaluate --batch (FACTS-ID-LIMIT), or a resource whose facts document exceeds the facts-document limit registry facts uses (FACTS-DOCUMENT-LIMIT), writes its code, the file's sha256 and size, and a fixed message to standard error, never anything read from the file, and exits 2. " +
 			"Exit 0 when the batch was written (an empty one included), 2 when the file was refused, 3 for an unusable command line, and 4 when the file could not be read or the batch written.",
 		Example: "jpack terraform facts --plan plan.json --type google_sql_user --actions delete,update > changes.jsonl\n" +
 			"jpack experimental evaluate --pack-id sql-user-change --batch changes.jsonl --format json --require-outcome allowed",
@@ -90,12 +90,12 @@ func (a *App) terraformFactsCommand() *cobra.Command {
 				}
 				return &handledExit{code: factsExitNotJudged}
 			}
-			within, err := terraformFactsWithinLimit(acquisition)
+			code, err := terraformFactsCheck(acquisition)
 			switch {
 			case err != nil:
 				return a.operational(name, "text", result.ExitInternal, "JPS-INTERNAL", "A facts document could not be built.")
-			case !within:
-				over := terraformfile.Refusal{Code: registry.CodeFactsDocumentLimit, SHA256: acquisition.SHA256, Bytes: acquisition.Bytes, Message: registry.FactsMessage(registry.CodeFactsDocumentLimit)}
+			case code != "":
+				over := terraformfile.Refusal{Code: code, SHA256: acquisition.SHA256, Bytes: acquisition.Bytes, Message: terraformFactsMessage(code)}
 				if _, err := a.errOut.Write(append(over.JSON(), '\n')); err != nil {
 					return &handledExit{code: result.ExitIO}
 				}
@@ -224,22 +224,46 @@ func terraformFactsDocument(dst []byte, resource terraformfile.Resource, tail []
 	return append(dst, tail...)
 }
 
-// terraformFactsWithinLimit reports whether every facts document is within
-// the facts-document limit registry facts holds its documents to. One over it
-// refuses the whole run, rather than leaving its line out of the batch.
-func terraformFactsWithinLimit(acquisition *terraformfile.Acquisition) (bool, error) {
+// CodeFactsIDLimit is this runtime's provisional code for a selected
+// resource whose address, the id of its batch line, is not 1 to
+// MaxBatchIDBytes bytes: evaluate --batch would refuse that line.
+const CodeFactsIDLimit = "FACTS-ID-LIMIT"
+
+var factsIDLimitMessage = fmt.Sprintf("A selected resource's address, the id of its batch line, is not 1 to %d bytes long, the id evaluate --batch reads.", MaxBatchIDBytes)
+
+// terraformFactsMessage is the fixed message of a code terraformFactsCheck
+// reports.
+func terraformFactsMessage(code string) string {
+	if code == CodeFactsIDLimit {
+		return factsIDLimitMessage
+	}
+	return registry.FactsMessage(code)
+}
+
+// terraformFactsCheck returns the code that refuses the whole run, or "":
+// FACTS-ID-LIMIT when a selected resource's address is not an id evaluate
+// --batch reads (1 to MaxBatchIDBytes bytes), checked over every resource
+// first, then FACTS-DOCUMENT-LIMIT when a facts document is over the limit
+// registry facts holds its documents to. A resource over either refuses the
+// run, rather than leaving its line out of the batch.
+func terraformFactsCheck(acquisition *terraformfile.Acquisition) (string, error) {
+	for _, resource := range acquisition.Resources {
+		if resource.Address == "" || len(resource.Address) > MaxBatchIDBytes {
+			return CodeFactsIDLimit, nil
+		}
+	}
 	tail, err := terraformFactsTail(acquisition)
 	if err != nil {
-		return false, err
+		return "", err
 	}
 	var document []byte
 	for _, resource := range acquisition.Resources {
 		document = terraformFactsDocument(document, resource, tail)
 		if !registry.WithinFactsLimit(document) {
-			return false, nil
+			return registry.CodeFactsDocumentLimit, nil
 		}
 	}
-	return true, nil
+	return "", nil
 }
 
 // writeTerraformFacts writes one batch line per selected resource, in the

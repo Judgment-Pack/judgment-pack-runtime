@@ -515,3 +515,45 @@ func TestTerraformFactsHoldsTheFactsDocumentLimit(t *testing.T) {
 		t.Fatalf("stderr:\n got %q\nwant %q", stderr, want)
 	}
 }
+
+// A resource's address is its batch line's id, which evaluate --batch reads
+// at 1 to MaxBatchIDBytes bytes. An address at the bound is written and
+// evaluated; one a byte longer refuses the whole run with FACTS-ID-LIMIT,
+// and the diagnostic never carries the address.
+func TestTerraformFactsHoldsTheBatchIDLimit(t *testing.T) {
+	pack := writeDocument(t, "pack.json", sqlUserPack)
+	const prefix, suffix = `synthetic_sql_user.u["`, `"]`
+	address := func(length int) string {
+		return prefix + strings.Repeat("k", length-len(prefix)-len(suffix)) + suffix
+	}
+	state := func(address string) []byte {
+		return tfState(t, tfModule("", []tfResource{
+			{address: "synthetic_sql_user.a", typ: "synthetic_sql_user", name: "a", values: map[string]any{"role": "reader"}},
+			{address: address, typ: "synthetic_sql_user", name: "u", index: address[len(prefix) : len(address)-len(suffix)], values: map[string]any{"role": "reader"}},
+		}))
+	}
+	at := address(MaxBatchIDBytes)
+	code, out, stderr := runTest(t, []string{"terraform", "facts", "--state", tfFile(t, "state.json", state(at)), "--type", "synthetic_sql_user"}, "")
+	if got := tfIDs(tfLines(t, out)); code != 0 || len(got) != 2 || got[1] != at {
+		t.Fatalf("at the bound: %d %v %q", code, got, stderr)
+	}
+	batch := writeDocument(t, "batch.jsonl", out)
+	if code, out, stderr := runTest(t, []string{"experimental", "evaluate", pack, "--batch", batch, "--format", "json", "--require-outcome", "allowed"}, ""); code != 0 || strings.Count(out, "\n") != 2 {
+		t.Fatalf("evaluate reads the batch at the bound: %d\n%s\n%s", code, out, stderr)
+	}
+
+	over := address(MaxBatchIDBytes + 1)
+	data := state(over)
+	code, out, stderr = runTest(t, []string{"terraform", "facts", "--state", tfFile(t, "state.json", data), "--type", "synthetic_sql_user"}, "")
+	if code != 2 || out != "" {
+		t.Fatalf("a byte over the bound: %d %.200q", code, out)
+	}
+	sum := sha256.Sum256(data)
+	want := `{"bytes":` + fmt.Sprint(len(data)) + `,"code":"FACTS-ID-LIMIT","message":` + string(mustJCS(t, terraformFactsMessage(CodeFactsIDLimit))) + `,"sha256":"` + hex.EncodeToString(sum[:]) + `"}` + "\n"
+	if stderr != want {
+		t.Fatalf("stderr:\n got %q\nwant %q", stderr, want)
+	}
+	if strings.Contains(stderr, "kkkk") || strings.Contains(stderr, "synthetic_sql_user") {
+		t.Fatalf("the diagnostic carries the address: %q", stderr)
+	}
+}

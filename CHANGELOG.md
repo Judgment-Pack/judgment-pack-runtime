@@ -13,10 +13,16 @@ All notable changes to tagged releases are documented here.
   RFC 8785 canonical, the line `registry facts` writes. `--mode`, `--address`, `--actions` (plan
   only), `--max` and `--max-bytes` are the source's `select` and `maxBytes` members. A refused file
   writes no line, and writes only its code, sha256, size and fixed message to standard error, then
-  exits 2. So does a resource whose facts document is over `registry facts`' facts-document limit
-  (`FACTS-DOCUMENT-LIMIT`): the whole run is refused, and no line is skipped. An unusable command line exits 3, and an unreadable file exits 4. `jpack dialect
-  validate` does not admit the `terraform-file` kind yet. Existing commands and their output are
+  exits 2. So does a selected resource whose address, its line's id, is over the id limit
+  `evaluate --batch` reads (`FACTS-ID-LIMIT`, new and provisional, 256 bytes), and one whose
+  facts document is over `registry facts`' facts-document limit (`FACTS-DOCUMENT-LIMIT`). The
+  whole run is refused, no line is skipped, and the diagnostic never carries the address. An
+  unusable command line exits 3, and an unreadable file exits 4. `jpack dialect validate` does not
+  admit the `terraform-file` kind yet. Existing commands and their output are
   unchanged, and the conformance claim in CONFORMANCE.md is unchanged.
+- **`FACTS-DOCUMENT-LIMIT`'s message no longer names an entry.** It now begins "A facts
+  document", so that it reads right for a Terraform resource as well as a registry entry. The code
+  and the limit are unchanged.
 - **The Terraform reader writes numbers without building them first** (ADR-0097). Each number's
   normal form was built as a string three times: when the selection was checked, when the value
   was counted, and when it was written. It is now measured, and then written straight into the

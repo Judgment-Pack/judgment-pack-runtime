@@ -307,6 +307,15 @@ jpack terraform facts (--plan FILE | --state FILE) --type T[,T...] [--mode manag
   Standard output stays empty, standard error carries the same four members as a refusal (the
   code, the file's sha256 and size, and the code's fixed message), and the exit code is 2, as
   `registry facts` uses for the same code.
+- **Each address is held to the batch id limit.** A line's id is the resource's address, and
+  `evaluate --batch` reads an id of 1 to 256 bytes (`MaxBatchIDBytes`), refusing a longer line
+  with `JPS-INVOCATION-BATCH-ITEM`. A `for_each` key can make an address longer than that. Before
+  anything is written, every selected address is checked, and one outside the bound refuses the
+  whole run with `FACTS-ID-LIMIT`, this runtime's provisional code, ahead of the document check.
+  The output is the same as for `FACTS-DOCUMENT-LIMIT`, with a fixed message, and it never carries
+  the address. `registry facts` does not need the check: its longest id,
+  `<environment>:<kind>/<entry-id>`, is 32 + 1 + 63 + 1 + 128 = 225 bytes under the registry reader's name
+  bounds.
 - **`*` never crosses `.`, `[` or `]`** (§4). So `module.*.google_sql_user.*` matches
   `module.db.google_sql_user.app` but not a counted module (`module.db[0]...`) or a counted
   instance (`...app[0]`). Those need `[*]`, as in `module.*[*].google_sql_user.*[*]`.

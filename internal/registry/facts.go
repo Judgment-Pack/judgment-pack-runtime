@@ -35,7 +35,7 @@ var FactsCodes = map[string]codeInfo{
 	"FACTS-POINTER-UNKNOWN":   {SeverityWarning, "The pack reads a fact pointer the facts contract does not list."},
 	"FACTS-TYPE-ORDERED":      {SeverityWarning, "The pack uses an ordered comparison on a fact pointer that the contract does not type decimal."},
 	"FACTS-VALUE-UNREACHABLE": {SeverityWarning, "The pack compares a fact with a value outside the pointer's values in the contract, or of another type: an equals or not-equals operand, or at least one item of an in, that no fact at the pointer can equal."},
-	CodeFactsDocumentLimit:    {SeverityError, "The entry's facts document exceeds the runtime's facts-document limit: 10 MiB, depth 128, 250000 nodes, 1 MiB per string."},
+	CodeFactsDocumentLimit:    {SeverityError, "A facts document exceeds the runtime's facts-document limit: 10 MiB, depth 128, 250000 nodes, 1 MiB per string."},
 	"FACTS-CONTRACT-LIMIT":    {SeverityError, "The facts contract exceeds the contract bounds: 8 MiB, 65536 facts, a pointer of more than 35 tokens, or the generation work limit."},
 	"FACTS-CONTRACT-FORM":     {SeverityError, "A member of the facts contract is missing, not defined by the format, or has the wrong form."},
 	"FACTS-CONTRACT-ORDER":    {SeverityError, "The contract's facts are not in strictly increasing order of pointer, then type."},
