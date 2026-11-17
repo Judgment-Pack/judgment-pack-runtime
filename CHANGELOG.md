@@ -104,8 +104,10 @@ All notable changes to tagged releases are documented here.
   response. Stray writes are checked in a fresh copy of the repository, without `.git`, of at most
   256 MiB and 100 000 entries (`EMIT-STRAY-WRITE`). `--update` rewrites `expected/` and never
   touches an expected-failure vector. A run that gives no files is recorded as the marker
-  `expected/~empty` alone, a zero-byte file that git can track. The report (`harnessReportVersion` `1.0.0`) is canonical
-  JSON with one row per vector and check. It exits 0, 1 or 2, as §5 says. `EMIT-VECTOR` and
+  `expected/~empty` alone, a zero-byte file that git can track. A symbolic link in the repository
+  whose target lies inside it is pointed into the copy, and one that leads out of it refuses the
+  run (`EMIT-HARNESS-BOUND`) before any emitter runs. The report (`harnessReportVersion` `1.0.0`)
+  is canonical JSON with one row per vector and check. It exits 0, 1 or 2, as §5 says. `EMIT-VECTOR` and
   `EMIT-HARNESS-BOUND` are new codes, provisional. The evaluator's claim in CONFORMANCE.md is
   unchanged.
 - **A Go typed facts builder emitter: `cmd/jpack-emit-go-facts`** (ADR-0100, proposed). This is
