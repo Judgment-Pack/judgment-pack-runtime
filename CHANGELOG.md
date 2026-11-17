@@ -9,6 +9,7 @@ All notable changes to tagged releases are documented here.
   each target's job limit follows it: the time plus ten minutes, at most 350 minutes. A value of
   another form, or one over the cap, fails the run before any target starts. The scheduled run
   still fuzzes each target for 30 seconds, now under an 11-minute job limit (it was 15).
+  The conformance claim in CONFORMANCE.md is unchanged.
 - **The start-up module's refusals and limits are in the mutation table**
   (docs/registry-mutation-table.md). The module reports no codes, so its rows are named by its
   exported error values (`ErrLimit`, `ErrWorldReadable`, `ErrDocument` and the others) and its
@@ -18,7 +19,8 @@ All notable changes to tagged releases are documented here.
   function with no row, and the `mutation-table` check now runs when `startup/` changes.
   `TestReadFileRefusals` gains two files holding a value at the bound, a newline and one more
   byte, which `ReadFile` would admit if it read one or two bytes fewer. No exported identifier,
-  message or behaviour of the module changes.
+  message or behaviour of the module changes. The conformance claim in CONFORMANCE.md is
+  unchanged.
 
 ## 0.51.0 - 2026-11-17
 
