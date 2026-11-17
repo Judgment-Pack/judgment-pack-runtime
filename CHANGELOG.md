@@ -82,6 +82,18 @@ All notable changes to tagged releases are documented here.
   fixture path that passes through a directory reparse point, such as a synced folder's
   placeholder directory, is now refused as well. The conformance claim in CONFORMANCE.md is
   unchanged.
+- **A document whose canonical form is longer than its text no longer costs many times its
+  bound** (#458). Admission checks a number against RFC 0034 §1 by comparing its digits with its
+  double's shortest decimal, with no big arithmetic, and does not copy a literal it keeps as
+  written: a MiB of `1e20`s took 223 MiB of allocation to admit, and now takes 58 MiB,
+  close to what the shared JSON decoder takes for any document of that size. Where a canonical form is held to a bound, its
+  length is measured first and the form is built only within the bound: a given `request.json`
+  in `jpack emit conformance`, a request `jpack emit` forms, a file `jpack registry import` reads,
+  a generated facts contract, and the registry check 4 forms. A given request of 1 MiB of `1e20`s,
+  whose form is more than four times a 1 MiB bound, took 276 times the bound in allocation before
+  it was refused, and now takes 75 times; at the 64 MiB bound, such a file was measured before
+  this change at 16.7 GB and about 40 seconds. Every refusal keeps its code and location, and a document within its bound is
+  written in the same bytes. The conformance claim in CONFORMANCE.md is unchanged.
 
 ## 0.48.0 - 2026-11-17
 

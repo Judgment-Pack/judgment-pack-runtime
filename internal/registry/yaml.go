@@ -1,6 +1,7 @@
 package registry
 
 import (
+	"errors"
 	"slices"
 
 	"github.com/Judgment-Pack/judgment-pack-runtime/internal/jcs"
@@ -59,7 +60,15 @@ func importYAML(source Document, diagnostics *collector) []byte {
 		diagnostics.add("REG-DOC-SELECTOR", parser.location(root.at))
 		return nil
 	}
-	canonical, err := jcs.EncodeDocument(root.toValue())
+	// The bound is step 1's on the bytes written, measured before they are
+	// built: they can be longer than the file (the escape \a is written as
+	// \u0007). Over it, the document is refused as admission refuses it, at
+	// the root.
+	canonical, err := jcs.EncodeDocumentWithin(root.toValue(), bound)
+	if errors.Is(err, jcs.ErrTooLong) {
+		diagnostics.add("REG-DOC-SIZE", parser.location(root.at))
+		return nil
+	}
 	if err != nil {
 		// Every number was held to §1's rules as it was read.
 		diagnostics.add("REG-DOC-NUMBER", parser.location(root.at))
