@@ -43,7 +43,7 @@ run the mutants; a reviewer does.
   A quoted code is matched with its closing quote, so `"EMIT-REQUEST"` is not part of
   `"EMIT-REQUEST-VERSION"`.
 - **provisional**: whether `VERSIONING.md` lists the code as this runtime's own and provisional.
-  `n/a` marks an emitter's `x-` code, which `VERSIONING.md` does not cover.
+  `n/a` marks an emitter's `x-` code, which `VERSIONING.md` places outside the registry line's promise.
 
 | code | severity | package | test | mutant site | mutant | provisional |
 |---|---|---|---|---|---|---|
