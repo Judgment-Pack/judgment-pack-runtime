@@ -195,7 +195,7 @@ provisional (VERSIONING.md).
    (an address may itself hold ` deposed `), so the check is on ids, not on address and key
    pairs. The acquired object carries the key as `deposed`, present only for a deposed object:
    after `before` in a plan and after `address` in a state, in canonical order. The value is
-   sorted by id, so no tie is left to the file's order. For Terraform's addresses that is address
+   sorted by id, so no tie is left to the file's order. For the addresses Terraform writes, that is in practice address
    order with the current object first and its deposed objects after it, by key: a space sorts
    before `.` and `[`, which extend an address. `Resource.ID` carries the id, and the batch tool
    writes it as the line's id. Before this, the key was not carried and the sort was stable, so two
