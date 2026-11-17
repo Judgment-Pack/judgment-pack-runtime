@@ -1,6 +1,9 @@
 package cli
 
-import "testing"
+import (
+	"context"
+	"testing"
+)
 
 // The write may start only while no signal has come; once it has started,
 // a signal no longer restores the default disposition, so the write is not
@@ -43,5 +46,31 @@ func TestTheWritePhaseEnds(t *testing.T) {
 	in.endWrite()
 	if in.writing || in.beginWrite() {
 		t.Fatal("a write began after a signal")
+	}
+}
+
+// A signal during a write phase leaves the signals caught until the write
+// ends; endWrite then restores their default disposition (stop), so that a
+// second signal ends jpack once the replacement is over. A write that ends
+// with no signal leaves them caught.
+func TestEndWriteRestoresTheSignalsAfterASignalDuringTheWrite(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	stops := 0
+	in := &interruption{ctx: ctx, stop: func() { stops++ }}
+	if !in.beginWrite() {
+		t.Fatal("the write was refused with no signal")
+	}
+	in.endWrite()
+	if stops != 0 {
+		t.Fatalf("a write with no signal restored the signals %d times", stops)
+	}
+	if !in.beginWrite() {
+		t.Fatal("the second write was refused with no signal")
+	}
+	cancel() // a signal during the write
+	in.endWrite()
+	if stops != 1 {
+		t.Fatalf("endWrite restored the signals %d times after a signal, want 1", stops)
 	}
 }

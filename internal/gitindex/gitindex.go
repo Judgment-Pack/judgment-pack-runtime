@@ -54,7 +54,17 @@ var (
 	// ErrFormat is an index this reader does not read: see the package
 	// documentation.
 	ErrFormat = errors.New("gitindex: the index is not of a form this reader reads")
+	// ErrRelocated is a repository whose index or working tree git may take
+	// from elsewhere: GIT_INDEX_FILE, GIT_DIR or GIT_WORK_TREE is set,
+	// .git/config mentions "worktree" or "include" anywhere (core.worktree,
+	// extensions.worktreeConfig, an include), or .git/config.worktree exists.
+	// Its .git/index may then not be the index git reads for root.
+	ErrRelocated = errors.New("gitindex: git may read another index or working tree for the root")
 )
+
+// relocatingEnv are the variables with which git reads another index, or
+// another repository or working tree, than root/.git gives.
+var relocatingEnv = []string{"GIT_INDEX_FILE", "GIT_DIR", "GIT_WORK_TREE"}
 
 // Entry is what the reader gives of one entry of an index.
 type Entry struct {
@@ -96,7 +106,31 @@ func ReadWorkTree(root string, visit func(Entry)) error {
 	case info.Mode().Type() != fs.ModeDir:
 		return ErrNotDirectory
 	}
+	for _, name := range relocatingEnv {
+		if _, set := os.LookupEnv(name); set {
+			return ErrRelocated
+		}
+	}
+	config, err := readFile(filepath.Join(gitDir, "config"))
+	switch {
+	case errors.Is(err, errMissing):
+	case err != nil:
+		return err
+	case relocates(config):
+		return ErrRelocated
+	}
+	// A per-worktree config (extensions.worktreeConfig) can set
+	// core.worktree too; one that is there at all is refused.
+	switch _, err := os.Lstat(filepath.Join(gitDir, "config.worktree")); {
+	case err == nil:
+		return ErrRelocated
+	case !errors.Is(err, fs.ErrNotExist):
+		return ErrUnreadable
+	}
 	data, err := readFile(filepath.Join(gitDir, "index"))
+	if errors.Is(err, errMissing) {
+		err = ErrUnreadable
+	}
 	if err != nil {
 		return err
 	}
@@ -104,9 +138,27 @@ func ReadWorkTree(root string, visit func(Entry)) error {
 	return err
 }
 
+// errMissing is a file readFile found not there; ReadWorkTree reports a
+// missing index as ErrUnreadable, and reads a missing config as empty.
+var errMissing = errors.New("gitindex: no such file")
+
+// relocates says whether a git config file may set where the working tree
+// is, or name another file that could. It does not parse the file: git's
+// syntax allows several section headers on a line, includes, and keys git
+// may add, so any "worktree" (core.worktree, extensions.worktreeConfig) or
+// "include" (include, includeIf), in any case and anywhere, says yes. A
+// config that only mentions either somewhere else is refused too.
+func relocates(config []byte) bool {
+	lower := bytes.ToLower(config)
+	return bytes.Contains(lower, []byte("worktree")) || bytes.Contains(lower, []byte("include"))
+}
+
 // readFile reads a regular file of at most maxBytes.
 func readFile(name string) ([]byte, error) {
 	file, err := os.Open(name)
+	if errors.Is(err, fs.ErrNotExist) {
+		return nil, errMissing
+	}
 	if err != nil {
 		return nil, ErrUnreadable
 	}

@@ -12,7 +12,8 @@ All notable changes to tagged releases are documented here.
 - **An interrupted emitter run has a code of its own** (ADR-0098). `jpack emit` sent an interrupt
   or SIGTERM before its write, or while its emitter runs, is now refused with the new provisional
   code `EMIT-INTERRUPTED`, once, at `/command`, where it gave `EMIT-PROCESS` even when every
-  emitter exited 0; no later environment's emitter is started. What ended the emitter decides:
+  emitter exited 0; no later environment's emitter is started. What ended the emitter decides,
+  read from its wait status and from what first ended the run, not from whether a kill was sent:
   one that exited non-zero or ran out of time is still `EMIT-PROCESS`, and one that exited 0
   before the interrupt keeps its response. `jpack emit conformance` interrupted now reports
   `EMIT-INTERRUPTED`, where v0.49.0 reported `EMIT-HARNESS-BOUND`, so one code names an interrupt
@@ -30,8 +31,11 @@ All notable changes to tagged releases are documented here.
   starts, `jpack` marks every descriptor above standard error close-on-exec. Where `/dev/fd` lists
   nothing above 2, as on a system without a full descriptor file system, it now also marks every
   number from 3 below the descriptor limit (at most 65536), as it already did where the listing
-  could not be read. No release target is affected. The conformance claim in CONFORMANCE.md is
-  unchanged.
+  could not be read. Both scans now go up to the hard limit, not the soft one, which a descriptor
+  opened before the soft limit was lowered can sit above. A descriptor above the scan's top is
+  still missed: one opened before the hard limit was lowered below it, or one above 65536 where the
+  hard limit is higher, as on macOS, where it can be unlimited. No release target is affected. The
+  conformance claim in CONFORMANCE.md is unchanged.
 - **The mutation table's check is stricter.** `scripts/check-mutation-table.py` now also fails
   when a row's mutant is not `every A becomes B` with `A` the row's own code (quoted, or a
   constant of the site's package that holds it), found in the body of the row's mutant site
@@ -52,12 +56,14 @@ All notable changes to tagged releases are documented here.
   holds a name made only of dots and spaces counts as tracked. Each comparison errs toward
   refusing. The harness reads `--root/.git/index` itself, versions 2 to 4, and never runs git.
   Every other link that leads out is refused as before, and so is every such link when `--root` has
-  no `.git` directory (a linked worktree's `.git` file included), or the index cannot be read,
-  fails its checksum, is past 64 MiB or 1 048 576 entries, or holds a version, entry or required
-  extension the reader does not read (a split or sparse index among them) or a path twice at one
-  stage. A write the emitter makes at a left-out link's path is a stray write of the copy. The
-  listing names at most 100 links; past them, one more diagnostic gives the count of the rest in
-  its message. The conformance claim in CONFORMANCE.md is unchanged.
+  no `.git` directory (a linked worktree's `.git` file included), or git may read another index or
+  working tree for it (`GIT_INDEX_FILE`, `GIT_DIR` or `GIT_WORK_TREE` is set, or `.git/config`
+  mentions `worktree` or `include` anywhere, or `.git/config.worktree` exists), or the index cannot
+  be read, fails its checksum, is past 64 MiB or 1 048 576 entries, or holds a version, entry or
+  required extension the reader does not read (a split or sparse index among them) or a path twice
+  at one stage. A write the emitter makes at a left-out link's path is a stray write of the copy.
+  The listing names at most 100 links; past them, one more diagnostic gives the count of the rest
+  in its message. The conformance claim in CONFORMANCE.md is unchanged.
 - **Reading and canonicalizing a document costs less, with the same bytes** (#464, #468). The
   shared JSON decoder reads a document that is valid JSON straight from its bytes, and builds a
   refusal's location only when it reports one; a document that is not valid JSON is read through
