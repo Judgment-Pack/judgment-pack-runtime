@@ -118,6 +118,12 @@ func emit(request []byte) ([]byte, error) {
 	if !ok {
 		return nil, errRequest
 	}
+	// The response holds one file per contract and the support file, so a
+	// request of maxFiles contracts or more is refused here, before any
+	// contract is read or generated.
+	if len(items) >= maxFiles {
+		return nil, errBounds
+	}
 	contracts := make([]*contract, 0, len(items))
 	for _, item := range items {
 		c, err := readContract(item)

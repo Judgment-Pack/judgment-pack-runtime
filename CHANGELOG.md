@@ -150,6 +150,9 @@ All notable changes to tagged releases are documented here.
     `{"code","message"}` alone: neither `sha256` nor `bytes`, since the stream's whole length is
     not read, and a fixed message that says the input was standard input (ADR-0097 reading 18). A
     file's `TF-SIZE` is unchanged, with the whole file's sha256 and size.
+  - `jpack-emit-go-facts` refuses a request of 10 000 contracts or more before reading them, and a
+    file's source over 16 MiB, or sources over 64 MiB in all, before formatting them. Before, the
+    bounds were held only after formatting, and a 59 MB request reached about 5.8 GB.
   - The conformance claim in CONFORMANCE.md is unchanged.
 
 ## 0.47.0 - 2026-11-16
