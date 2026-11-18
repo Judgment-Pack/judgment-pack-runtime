@@ -4,6 +4,8 @@ All notable changes to tagged releases are documented here.
 
 ## Unreleased
 
+## 0.53.0 - 2026-11-18
+
 - **The registry 1.1.0 reading joins the registry line** (VERSIONING.md, "The registry 1.1.0
   reading"). Registry format `1.1.0` (`spec/registry.md` with `spec/registry-1.1.0.md`, released on
   the spec tag `registry-v1.1.0` and not yet stable) is built in full: `jpack registry assemble`
