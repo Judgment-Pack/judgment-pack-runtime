@@ -60,8 +60,8 @@ const (
 // FormatTable is the release of the accepted format_version table this reader
 // implements, which the acquisition record carries as formatTable. The
 // terraform-file companion (spec/terraform-file.md §4 and §7, reading 1.0.0,
-// proposed) gives its first table the release 1.0.0 (ADR-0097's amendment of
-// 2026-11-17).
+// released on terraform-file-v1.0.0) gives its first table the release 1.0.0
+// (ADR-0097's amendment of 2026-11-17).
 const FormatTable = "1.0.0"
 
 // acceptedFormats is the table FormatTable names, per document. A version not
@@ -78,8 +78,9 @@ func AcceptedFormats(document string) []string {
 }
 
 // The refusal codes. The terraform-file companion's §9 (spec/terraform-file.md,
-// proposed) names every one; RFC 0038 named all but CodeValueLimit (ADR-0097).
-// All are provisional until a spec release carries the reading (VERSIONING.md).
+// released on terraform-file-v1.0.0) names every one; RFC 0038 named all but
+// CodeValueLimit (ADR-0097). They are part of the registry line from v0.52.0
+// (VERSIONING.md, "The terraform-file reading").
 const (
 	CodeSize        = "TF-SIZE"
 	CodeJSON        = "TF-JSON"
@@ -97,7 +98,7 @@ var messages = map[string]string{
 	CodeSize:        "The file is longer than the source's maxBytes, and was not parsed.",
 	CodeJSON:        "The file is not one strict JSON value: UTF-8 with no byte-order mark and no lone surrogate escape, white space only after the value, nesting at most 128 deep, and no duplicate member name in any object. A binary plan file is refused here: pass the output of terraform show -json instead.",
 	CodeFormat:      "The file's top-level value is not an object whose format_version is a string in this reader's accepted table for the source's document. A raw state file has no format_version: pass the output of terraform show -json instead.",
-	CodeDocument:    "The file does not have the form of the source's document: a plan has a planned_values object and its resource_changes are an array, a state has neither and its values are an object holding a root_module, every resource of the read section names its address, type, name, mode and provider as strings, a deposed object's key is a non-empty string, and no two resources of the read section share an id (the address, with a deposed object's key).",
+	CodeDocument:    "The file does not have the form of the source's document: a plan has a planned_values object and its resource_changes are an array, a state has neither, and its values and their root_module are objects where present, every resource of the read section names its address, type, name, mode and provider as strings, a deposed object's key is a non-empty string, and no two resources of the read section share an id (the address, with a deposed object's key).",
 	CodeSensitivity: "A resource of the read section, selected or not, does not carry its sensitivity mirror, or carries one that is not true, false, an object or an array at every position.",
 	CodeSelectBound: "The source selects more resources than its select.max.",
 	CodeNumber:      "A number in the acquired value has a normal form longer than 64 characters.",

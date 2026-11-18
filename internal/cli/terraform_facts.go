@@ -22,7 +22,7 @@ func (a *App) terraformCommand() *cobra.Command {
 	command := &cobra.Command{
 		Use:   "terraform",
 		Short: "Read the JSON terraform show -json writes, with every value marked sensitive removed (spec RFC 0038)",
-		Long:  "Terraform operations over local files: the JSON terraform show -json writes for a saved plan or for state. Nothing runs Terraform, reads a state backend or a binary plan, or contacts a network. It follows the accepted RFC 0038 and the terraform-file companion (spec/terraform-file.md), whose reading 1.0.0, format table 1.0.0 and vectors are proposed and not released yet.",
+		Long:  "Terraform operations over local files: the JSON terraform show -json writes for a saved plan or for state. Nothing runs Terraform, reads a state backend or a binary plan, or contacts a network. It follows the accepted RFC 0038 and the terraform-file companion (spec/terraform-file.md), whose reading 1.0.0, format table 1.0.0 and vectors are released on the spec tag terraform-file-v1.0.0, and not yet stable.",
 		Args:  cobra.NoArgs,
 		RunE: func(command *cobra.Command, _ []string) error {
 			return command.Help()

@@ -55,9 +55,9 @@ run the mutants; a reviewer does.
   The check compares it with the source, which marks every code: the section heading of each
   code in `internal/emit/codes.go`, `internal/registry/diag.go` and `internal/registry/facts.go`,
   and the comment of a constant that holds a code (the `TF-*` codes, `FACTS-ID-LIMIT`). No
-  registry section says provisional: the registry companion's codes are released on
-  `registry-v1.0.0`, and the RFCs' are the RFCs', so every `REG-*`, `REF-*` and `FACTS-*` row is
-  `no`.
+  section or comment says provisional: the registry companion's codes are released on
+  `registry-v1.0.0`, the terraform-file companion's on `terraform-file-v1.0.0`, and the RFCs' are
+  the RFCs', so every `REG-*`, `REF-*`, `FACTS-*` and `TF-*` row is `no`.
 
 | code | severity | package | test | mutant site | mutant | provisional |
 |---|---|---|---|---|---|---|
@@ -176,14 +176,14 @@ run the mutants; a reviewer does.
 | `EMIT-VECTOR` | error | `./internal/emit/conformance` | `TestVectorLayoutRefusals` | `internal/emit/conformance/vectors.go:layoutVector` | every `"EMIT-VECTOR"` becomes `"EMIT-PATH-UNREADABLE"` | no |
 | `EMIT-HARNESS-BOUND` | error | `./internal/emit/conformance` | `TestReferencesBound` | `internal/emit/conformance/references.go:references` | every `"EMIT-HARNESS-BOUND"` becomes `"EMIT-VECTOR"` | no |
 | `EMIT-LINK-OMITTED` | warning | `./internal/emit/conformance` | `TestALinkOutOfTheRepositoryIsLeftOut` | `internal/emit/conformance/harness.go:Run` | every `"EMIT-LINK-OMITTED"` becomes `"EMIT-HARNESS-BOUND"` | no |
-| `TF-SIZE` | error | `./internal/terraformfile` | `TestEveryRefusalCodeIsReported` | `internal/terraformfile/read.go:read` | every `CodeSize` becomes `CodeJSON` | yes |
-| `TF-JSON` | error | `./internal/terraformfile` | `TestEveryRefusalCodeIsReported` | `internal/terraformfile/read.go:read` | every `CodeJSON` becomes `CodeFormat` | yes |
-| `TF-FORMAT` | error | `./internal/terraformfile` | `TestEveryRefusalCodeIsReported` | `internal/terraformfile/read.go:read` | every `CodeFormat` becomes `CodeDocument` | yes |
-| `TF-DOCUMENT` | error | `./internal/terraformfile` | `TestEveryRefusalCodeIsReported` | `internal/terraformfile/read.go:read` | every `CodeDocument` becomes `CodeSensitivity` | yes |
-| `TF-SENSITIVITY` | error | `./internal/terraformfile` | `TestEveryRefusalCodeIsReported` | `internal/terraformfile/read.go:read` | every `CodeSensitivity` becomes `CodeSelectBound` | yes |
-| `TF-SELECT-BOUND` | error | `./internal/terraformfile` | `TestEveryRefusalCodeIsReported` | `internal/terraformfile/read.go:read` | every `CodeSelectBound` becomes `CodeNumber` | yes |
-| `TF-NUMBER` | error | `./internal/terraformfile` | `TestEveryRefusalCodeIsReported` | `internal/terraformfile/read.go:read` | every `CodeNumber` becomes `CodeValueLimit` | yes |
-| `TF-VALUE-LIMIT` | error | `./internal/terraformfile` | `TestTheValueLimitHoldsAtItsBoundary` | `internal/terraformfile/read.go:read` | every `CodeValueLimit` becomes `CodeNumber` | yes |
+| `TF-SIZE` | error | `./internal/terraformfile` | `TestEveryRefusalCodeIsReported` | `internal/terraformfile/read.go:read` | every `CodeSize` becomes `CodeJSON` | no |
+| `TF-JSON` | error | `./internal/terraformfile` | `TestEveryRefusalCodeIsReported` | `internal/terraformfile/read.go:read` | every `CodeJSON` becomes `CodeFormat` | no |
+| `TF-FORMAT` | error | `./internal/terraformfile` | `TestEveryRefusalCodeIsReported` | `internal/terraformfile/read.go:read` | every `CodeFormat` becomes `CodeDocument` | no |
+| `TF-DOCUMENT` | error | `./internal/terraformfile` | `TestEveryRefusalCodeIsReported` | `internal/terraformfile/read.go:read` | every `CodeDocument` becomes `CodeSensitivity` | no |
+| `TF-SENSITIVITY` | error | `./internal/terraformfile` | `TestEveryRefusalCodeIsReported` | `internal/terraformfile/read.go:read` | every `CodeSensitivity` becomes `CodeSelectBound` | no |
+| `TF-SELECT-BOUND` | error | `./internal/terraformfile` | `TestEveryRefusalCodeIsReported` | `internal/terraformfile/read.go:read` | every `CodeSelectBound` becomes `CodeNumber` | no |
+| `TF-NUMBER` | error | `./internal/terraformfile` | `TestEveryRefusalCodeIsReported` | `internal/terraformfile/read.go:read` | every `CodeNumber` becomes `CodeValueLimit` | no |
+| `TF-VALUE-LIMIT` | error | `./internal/terraformfile` | `TestTheValueLimitHoldsAtItsBoundary` | `internal/terraformfile/read.go:read` | every `CodeValueLimit` becomes `CodeNumber` | no |
 | `x-go-loader-schema` | error | `./cmd/jpack-emit-go-loader` | `TestFindings` | `cmd/jpack-emit-go-loader/schema.go:objectType` | every `findSchema` becomes `findSecret` | n/a |
 | `x-go-loader-secret` | error | `./cmd/jpack-emit-go-loader` | `TestFindings` | `cmd/jpack-emit-go-loader/schema.go:markSecret` | every `findSecret` becomes `findSchema` | n/a |
 | `x-go-loader-name` | error | `./cmd/jpack-emit-go-loader` | `TestFindings` | `cmd/jpack-emit-go-loader/names.go:namePosition` | every `findName` becomes `findCollide` | n/a |
