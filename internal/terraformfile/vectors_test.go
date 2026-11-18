@@ -15,16 +15,18 @@ import (
 )
 
 // The Spec's vectors for the terraform-file reading 1.0.0, copied byte for
-// byte from the Spec revision testdata/provenance.json names. The Spec
-// proposes them with the companion text: until a terraform-file tag releases
-// them they are no conformance corpus and back no claim, and this runtime is
-// their one reader, by the same maintainer as the vectors.
+// byte from the Spec revision testdata/provenance.json names: the commit the
+// terraform-file-v1.0.0 tag names, which releases them with the companion text,
+// not yet stable. The companion's second reader, the vectors and this reader
+// are by the same vendor: agreement on them is not a cross-vendor claim.
 const vectorsDir = "testdata/1.0.0"
 
-// The revision the vectors are pinned to: the Spec commit that merges the pull
-// request that last changed them, until the terraform-file-v1.0.0 tag is
-// published.
-const vectorsRevision = "48fc63539b619f91a64fdcb60fc18a8afeeb01a4"
+// The revision the vectors are pinned to: the Spec commit the
+// terraform-file-v1.0.0 tag names, and the release that carries them.
+const (
+	vectorsRevision = "5d7feab2b51b0f5ec81b5ce8d616f9e4045c62af"
+	vectorsRelease  = "terraform-file-v1.0.0"
+)
 
 type generateRule struct {
 	Template string `json:"template"`
@@ -58,7 +60,7 @@ func readVectorManifest(t *testing.T) vectorManifest {
 	t.Helper()
 	var m vectorManifest
 	decodeVectorFile(t, "manifest.json", &m)
-	if m.Companion != "terraform-file" || m.Reading != "1.0.0" || m.Status != "proposed" {
+	if m.Companion != "terraform-file" || m.Reading != "1.0.0" || m.Status != "released" {
 		t.Fatalf("the manifest is for %s %s, %s", m.Companion, m.Reading, m.Status)
 	}
 	return m
@@ -178,7 +180,7 @@ func TestVendoredVectorsKeepTheirUpstreamDigests(t *testing.T) {
 	if err := json.Unmarshal(raw, &pin); err != nil {
 		t.Fatal(err)
 	}
-	if pin.Repository != "https://github.com/Judgment-Pack/judgment-pack-spec" || pin.Release != nil || pin.Revision != vectorsRevision {
+	if pin.Repository != "https://github.com/Judgment-Pack/judgment-pack-spec" || pin.Release == nil || *pin.Release != vectorsRelease || pin.Revision != vectorsRevision {
 		t.Fatalf("the vectors are pinned to %s at %v, %s", pin.Repository, pin.Release, pin.Revision)
 	}
 	listed := 0
