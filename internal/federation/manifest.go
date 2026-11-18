@@ -382,3 +382,41 @@ func containsString(list []string, value string) bool {
 	}
 	return false
 }
+
+// Path is one path a manifest names for a source, with the size bound of
+// the document it holds: a YAML path's is registry.MaxImportBytes, the
+// bound of the file import reads.
+type Path struct {
+	Path     string
+	MaxBytes int
+}
+
+// SourcePaths returns, by source name, the paths a manifest names that are
+// of their form (§3): what a caller reads at each source's commit to give an
+// assembly its bytes. A manifest that is not admitted names none; the
+// assembly reports why.
+func SourcePaths(data []byte) map[string][]Path {
+	out := map[string][]Path{}
+	m := readManifest(data, &collector{})
+	if m == nil {
+		return out
+	}
+	for _, s := range m.sources {
+		if s.name == "" {
+			continue
+		}
+		for _, p := range s.paths {
+			bound := MaxRegistryBytes
+			switch {
+			case strings.HasSuffix(p.path, ".yaml") || strings.HasSuffix(p.path, ".yml"):
+				bound = registry.MaxImportBytes
+			case p.role == documentBounds:
+				bound = MaxBoundsBytes
+			case p.role == documentKind:
+				bound = MaxKindBytes
+			}
+			out[s.name] = append(out[s.name], Path{Path: p.path, MaxBytes: bound})
+		}
+	}
+	return out
+}
