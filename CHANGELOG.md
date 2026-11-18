@@ -12,8 +12,10 @@ All notable changes to tagged releases are documented here.
   codes, its batch lines as their bytes, the eight `TF-*` codes, the table and the bounds are under
   the line's promise. The vendored vectors are pinned to the tag's commit, with `release`
   `terraform-file-v1.0.0` <!-- PLACEHOLDER(v0.52.0): move the pin in internal/terraformfile/testdata/provenance.json to the tag's commit, re-vendor codes.json, formats.json and manifest.json, and expect status released in vectors_test.go -->. The help of `jpack terraform`, the codes' comments, SECURITY.md and the
-  mutation table's provisional column (now `no` for every `TF-*` row) follow. No byte the command
-  writes and no code it reports changes. The conformance claim in CONFORMANCE.md is unchanged.
+  mutation table's provisional column (now `no` for every `TF-*` row) follow. No code the command
+  reports changes, and the only bytes it writes that change are `TF-DOCUMENT`'s message, which
+  said a state's `values` must hold a `root_module`; both are optional, and the message now says
+  so. The conformance claim in CONFORMANCE.md is unchanged.
 - **The `terraform-file` reader's format table is release `1.0.0`, and the companion's vectors
   run in the tests** (ADR-0097's amendment of 2026-11-17). The reading now has a companion of its
   own, `spec/terraform-file.md` (reading `1.0.0`, proposed, whose first release is to be
@@ -26,7 +28,8 @@ All notable changes to tagged releases are documented here.
   rows run through the reader, the 10 batch rows through `jpack terraform facts`, and 21 of the 37
   malformed declarations through its flags, each an unusable command line (exit 3); the other 16
   have no command-line form and are not run. Every row run gives its one expected result, the
-  same result the companion's second, independently written reader gives. The help
+  same result the companion's second reader gives. That reader is by the same vendor, so this is
+  not a cross-vendor claim; the stable bar stays an independently written reader (VERSIONING.md). The help
   of `jpack terraform` and VERSIONING.md now name the companion. The conformance claim in
   CONFORMANCE.md is unchanged.
 - **The fuzz workflow takes a fuzzing time on demand** (`.github/workflows/fuzz.yml`). A manual

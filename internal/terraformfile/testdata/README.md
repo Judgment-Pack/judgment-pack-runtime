@@ -17,14 +17,15 @@ expected results. The Spec proposes them with the companion text (`spec/terrafor
 reading `1.0.0`, proposed): until a terraform-file tag releases them they are not a conformance
 corpus, are in no bundle, and back no claim.
 
-`TestSpecVectors` runs every `read` and `read-stream` row through `Read` and `ReadStream`, 144 in
-all, and `TestTerraformFactsSpecVectors` in `internal/cli` runs the 8 `batch` rows through `jpack
+`TestSpecVectors` runs every `read` and `read-stream` row through `Read` and `ReadStream`, 159 in
+all, and `TestTerraformFactsSpecVectors` in `internal/cli` runs the 10 `batch` rows through `jpack
 terraform facts`. Three rows' inputs are not committed: a file of about 1 MiB, and files of the
 default `maxBytes`, 67108864 bytes, and one byte more. The tests build them by the manifest's
 `generate` rule. A row whose declaration is malformed reads no file, and this runtime reads no
-declaration document, so those 36 rows run through the command's flags where a command line can
-write the declaration (20 of them, each an unusable command line, exit 3), and the other 16 are not
+declaration document, so those 37 rows run through the command's flags where a command line can
+write the declaration (21 of them, each an unusable command line, exit 3), and the other 16 are not
 run: the test logs each one's reason.
 
-This runtime is the reading's one reader, and the vectors and the reader are by the same
-maintainer: agreement on these rows is not agreement between independent implementations.
+The companion's second reader, `tools/terraform_file_reader.py` in the Spec repository, gives the
+same result on every row, but it, the vectors and this reader are by the same vendor: agreement on
+these rows is not a cross-vendor claim, and not agreement between independently written readers.
