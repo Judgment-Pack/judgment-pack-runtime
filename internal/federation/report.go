@@ -87,7 +87,17 @@ func (r Report) Canonical() ([]byte, error) {
 const (
 	messageTruncated   = "The report lists the first 1000 diagnostics in its order, and more were found; whether the document is valid is judged on all of them."
 	messageScopeShared = "A project is listed in the secret scopes of two environments."
+	messageDocSize     = "The document exceeds its size bound."
+	messageDocNumber   = "A number is outside the admitted range: an integer beyond 2^53-1, a decimal whose value does not round-trip through a double, or negative zero."
 )
+
+// registryCodes are the format 1.0.0 codes this package raises itself, each
+// an error.
+var registryCodes = map[string]string{
+	"REG-DOC-SIZE":            messageDocSize,
+	"REG-DOC-NUMBER":          messageDocNumber,
+	"REF-SECRET-SCOPE-SHARED": messageScopeShared,
+}
 
 // fromRegistry is a format 1.0.0 diagnostic as a diagnostic of this report,
 // about the named source's document ("" for none).
@@ -127,6 +137,16 @@ func (c *collector) add(code string, location Location) {
 		panic("federation: unlisted diagnostic code " + code)
 	}
 	c.insert(Diagnostic{Code: code, Severity: info.severity, Location: location, Message: info.message})
+}
+
+// addRegistry records one of the format 1.0.0 codes this package raises
+// itself, with registry.Codes' message.
+func (c *collector) addRegistry(code string, location Location) {
+	message, ok := registryCodes[code]
+	if !ok {
+		panic("federation: unlisted diagnostic code " + code)
+	}
+	c.insert(Diagnostic{Code: code, Severity: SeverityError, Location: location, Message: message})
 }
 
 // insert records one diagnostic. A REG-REPORT-TRUNCATED of a validation run
