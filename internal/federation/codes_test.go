@@ -32,7 +32,7 @@ func TestCodesAreTheSpecList(t *testing.T) {
 	if err := json.Unmarshal(raw, &list); err != nil {
 		t.Fatal(err)
 	}
-	if list.Companion != "registry" || list.FormatVersion != "1.1.0" || list.Status != "proposed" {
+	if list.Companion != "registry" || list.FormatVersion != "1.1.0" || list.Status != "released" {
 		t.Fatalf("codes.json is for %s %s, %s", list.Companion, list.FormatVersion, list.Status)
 	}
 	federation, lock := 0, 0

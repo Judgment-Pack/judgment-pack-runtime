@@ -1,12 +1,14 @@
 # Pinned registry 1.1.0 rows
 
 `provenance.json` records exact files from Judgment-Pack/judgment-pack-spec at revision
-`7bc0874c719985f6909b3bc606e238773f4aeacd`, which merges the four pull requests that wrote them
+`adab5b267813de5e1012ebfcd94fdef87d407141`, the head of the release preparation of `registry-v1.1.0`,
+which holds the pull requests that wrote them
 ([spec #383](https://github.com/Judgment-Pack/judgment-pack-spec/pull/383),
 [spec #384](https://github.com/Judgment-Pack/judgment-pack-spec/pull/384),
 [spec #386](https://github.com/Judgment-Pack/judgment-pack-spec/pull/386) and
 [spec #387](https://github.com/Judgment-Pack/judgment-pack-spec/pull/387)): their original paths
-and SHA-256 checksums. No release tag names them yet (`release` is "proposed (not tagged)").
+and SHA-256 checksums. The release preparation sets their status to `released`; until the tag's
+commit is pinned, `release` is "registry-v1.1.0 (not tagged)".
 `LICENSE` is that repository's license. The files are retained for this package's tests and
 `internal/cli`'s, not read by the executable: the codes are written in `codes.go`, and a test holds
 them to `1.1.0/codes.json`.

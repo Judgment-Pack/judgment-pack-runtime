@@ -10,14 +10,14 @@ import (
 	"testing"
 )
 
-// The rows of registry format 1.1.0, proposed, copied byte for byte from the
-// Spec revision testdata/provenance.json names. No release tag names them
-// yet. The rows' second reader, the rows and this reader are by the same
+// The rows of registry format 1.1.0, released on registry-v1.1.0, copied
+// byte for byte from the Spec revision testdata/provenance.json names, the
+// release preparation's head until the pin names the tag's commit. The rows' second reader, the rows and this reader are by the same
 // vendor: agreement on them is not a cross-vendor claim.
 const (
 	rowsDir      = "testdata/1.1.0"
-	rowsRevision = "7bc0874c719985f6909b3bc606e238773f4aeacd"
-	rowsRelease  = "proposed (not tagged)"
+	rowsRevision = "adab5b267813de5e1012ebfcd94fdef87d407141"
+	rowsRelease  = "registry-v1.1.0 (not tagged)"
 )
 
 func TestVendoredRowsKeepTheirUpstreamDigests(t *testing.T) {
