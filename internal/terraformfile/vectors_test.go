@@ -21,9 +21,9 @@ import (
 // their one reader, by the same maintainer as the vectors.
 const vectorsDir = "testdata/1.0.0"
 
-// The revision the vectors are pinned to: the head of the Spec pull request
-// that adds them, until it merges.
-const vectorsRevision = "866ba96ad832e54e0beaa105a388e575b2d2874c"
+// The revision the vectors are pinned to: the Spec commit that merges the pull
+// request that adds them, until the terraform-file-v1.0.0 tag is published.
+const vectorsRevision = "8354daaeed00f7887c494a1aa4d37f9e6a7a489e"
 
 type generateRule struct {
 	Template string `json:"template"`

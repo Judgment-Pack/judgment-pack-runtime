@@ -1,10 +1,10 @@
 # Pinned terraform-file vectors
 
 `provenance.json` records exact files from Judgment-Pack/judgment-pack-spec at revision
-`866ba96ad832e54e0beaa105a388e575b2d2874c`, the head of the pull request that adds them
+`8354daaeed00f7887c494a1aa4d37f9e6a7a489e`, the commit that merges the pull request that adds them
 ([spec #373](https://github.com/Judgment-Pack/judgment-pack-spec/pull/373)): their original paths
 and SHA-256 checksums. No release carries them yet, so `release` is `null`; the pin moves to the
-commit that merges them, and to the `terraform-file-v1.0.0` tag once it is published. `LICENSE` is
+`terraform-file-v1.0.0` tag once it is published. `LICENSE` is
 that repository's license. The files are retained for this package's tests and `internal/cli`'s,
 not read by the executable: the reader's table and codes are written in `codes.go`, and a test
 holds them to `1.0.0/formats.json` and `1.0.0/codes.json`.

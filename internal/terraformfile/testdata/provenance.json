@@ -2,7 +2,7 @@
   "repository": "https://github.com/Judgment-Pack/judgment-pack-spec",
   "release": null,
   "pullRequest": "https://github.com/Judgment-Pack/judgment-pack-spec/pull/373",
-  "revision": "866ba96ad832e54e0beaa105a388e575b2d2874c",
+  "revision": "8354daaeed00f7887c494a1aa4d37f9e6a7a489e",
   "files": {
     "1.0.0/codes.json": {
       "upstream": "conformance/terraform-file/1.0.0/codes.json",
