@@ -337,3 +337,70 @@ func firstSourceFile(t *testing.T, r federationRow, args []string) (string, stri
 	t.Fatal("the row has no source file")
 	return "", ""
 }
+
+// federationRowNamed is the row of the given id.
+func federationRowNamed(t *testing.T, class, id string) federationRow {
+	t.Helper()
+	for _, r := range federationRowsOf(t, class) {
+		if r.ID == id {
+			return r
+		}
+	}
+	t.Fatalf("no %s row %s", class, id)
+	return federationRow{}
+}
+
+// TestRegistryKnownNotAdmitted holds a known index or lock that cannot be
+// admitted to an input error: both commands exit 4 with no report, naming
+// the flag and the file, so the source the document names is never
+// assembled as a repository's own.
+func TestRegistryKnownNotAdmitted(t *testing.T) {
+	for _, list := range []struct {
+		row, flag, member string
+		bound             int
+	}{
+		{"assemble-source-assembled-by-index", "--known-index", "indexFormatVersion", 8 * 1024 * 1024},
+		{"assemble-source-assembled-by-lock", "--known-lock", "lockFormatVersion", 1024 * 1024},
+	} {
+		r := federationRowNamed(t, "assembler", list.row)
+		const id = "https://example.invalid/registries/billing"
+		for _, c := range []struct {
+			kind string
+			data []byte
+		}{
+			{"oversize", bytes.Repeat([]byte(" "), list.bound+1)},
+			{"duplicate member", []byte(fmt.Sprintf(`{"%s":"1.1.0","registry":{"id":%q,"id":%q}}`, list.member, id, id))},
+			{"truncated", []byte(fmt.Sprintf(`{"%s":"1.1.0","registry":{"id":%q`, list.member, id))},
+			{"not JSON", []byte(list.member + ": 1.1.0\nregistry: {id: " + id + "}\n")},
+		} {
+			t.Run(list.flag+" "+c.kind, func(t *testing.T) {
+				args := federationArguments(t, r)
+				broken := filepath.Join(t.TempDir(), "known.json")
+				if err := os.WriteFile(broken, c.data, 0o600); err != nil {
+					t.Fatal(err)
+				}
+				replaced := false
+				for i := range args {
+					if args[i] == list.flag {
+						args[i+1], replaced = broken, true
+					}
+				}
+				if !replaced {
+					t.Fatalf("the row gives no %s", list.flag)
+				}
+				for _, command := range [][]string{
+					{"registry", "assemble"},
+					{"registry", "check-index", "--index", federationPath(t, "assembled/two-sources/index.json")},
+				} {
+					code, stdout, _ := runTest(t, append(command, args...), "")
+					if code != 4 || strings.Contains(stdout, `"valid"`) {
+						t.Fatalf("%s: exit=%d, want 4 and no report; stdout=%q", command[1], code, stdout)
+					}
+					if !strings.Contains(stdout, list.flag) || !strings.Contains(stdout, "known.json") || strings.Contains(stdout, "example.invalid") {
+						t.Errorf("%s: the refusal does not name the flag and file alone: %q", command[1], stdout)
+					}
+				}
+			})
+		}
+	}
+}

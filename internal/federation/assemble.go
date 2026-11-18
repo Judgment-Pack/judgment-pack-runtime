@@ -42,6 +42,29 @@ type Known struct {
 	Locks   []registry.Document
 }
 
+// KnownError reports a document of the known list that is not admitted. A
+// known index or lock names the assembled registry a source must not be, so
+// one that cannot be read would let that source pass as a repository's own:
+// the assembly is refused as an input error instead, with no report. It
+// names the document by its list and its position there, and the admission
+// code that refused it, never by anything the document holds.
+type KnownError struct {
+	// Lock is true for the list of locks, false for the list of indexes.
+	Lock bool
+	// Position is the document's place in its list, from 0.
+	Position int
+	// Code is the admission refusal, such as REG-DOC-SIZE or REG-DOC-JSON.
+	Code string
+}
+
+func (e *KnownError) Error() string {
+	list := "index"
+	if e.Lock {
+		list = "lock"
+	}
+	return fmt.Sprintf("known %s %d is not admitted (%s)", list, e.Position, e.Code)
+}
+
 // Assembly is an assembly's report and, for an assembly with no error, the
 // two documents step 8 writes: the assembled registry and the index, each
 // its JCS bytes.
@@ -93,8 +116,10 @@ type assembly struct {
 	index     map[string]any
 }
 
-// Assemble runs §4's assembly. The error reports a document that could not
-// be written in its canonical form, which an admitted document never is.
+// Assemble runs §4's assembly. The error is a *KnownError for a known index
+// or lock that is not admitted, with no report; otherwise it reports a
+// document that could not be written in its canonical form, which an
+// admitted document never is.
 func Assemble(in Input) (Assembly, error) {
 	a := &assembly{collected: &collector{}}
 	if err := a.run(in); err != nil {
@@ -127,7 +152,11 @@ func (a *assembly) run(in Input) error {
 		a.collected.add("FED-KNOWN-LIMIT", Location{Document: DocumentFederation})
 		return nil
 	}
-	if !a.step1(in) || !a.step2() || !a.step3(in.Known) {
+	known, err := knownIdentities(in.Known)
+	if err != nil {
+		return err
+	}
+	if !a.step1(in) || !a.step2() || !a.step3(known) {
 		return nil
 	}
 	a.step4()
@@ -287,8 +316,8 @@ func (a *assembly) digestOf(s *source, root map[string]any, at registry.Location
 
 // Step 3: each source's environments, the uniqueness of registry ids, and no
 // source an assembled registry the known list names.
-func (a *assembly) step3(known Known) bool {
-	digests, ids := knownIdentities(known)
+func (a *assembly) step3(known identities) bool {
+	digests, ids := known.digests, known.ids
 	seen := map[string]bool{}
 	for _, s := range a.manifest.sources {
 		if s.registryRoot == nil {
@@ -314,32 +343,49 @@ func (a *assembly) step3(known Known) bool {
 	return !a.collected.hasErrors()
 }
 
+// identities are the registry digests and ids the known list names.
+type identities struct {
+	digests, ids map[string]bool
+}
+
 // knownIdentities are the registry digests and ids the known indexes and
-// locks name. A known document that is not admitted names nothing: no code
-// refuses one, and an assembled registry the list does not name is read as
-// a repository's own (§4).
-func knownIdentities(known Known) (digests, ids map[string]bool) {
-	digests, ids = map[string]bool{}, map[string]bool{}
-	read := func(document registry.Document, bound int, member, selector string) {
+// locks name. A known document that is not admitted is a *KnownError: it
+// names nothing this reader can see, and a source it would have named must
+// not be read as a repository's own.
+func knownIdentities(known Known) (identities, error) {
+	out := identities{digests: map[string]bool{}, ids: map[string]bool{}}
+	read := func(lock bool, position int, document registry.Document, bound int, member, selector string) error {
 		if document.Oversize {
-			return
+			return &KnownError{Lock: lock, Position: position, Code: "REG-DOC-SIZE"}
 		}
-		root, _ := registry.AdmitDocument(document.Data, bound, member, selector, registry.Location{Document: DocumentIndex})
+		root, refusals := registry.AdmitDocument(document.Data, bound, member, selector, registry.Location{Document: DocumentIndex})
+		if root == nil || len(refusals) > 0 {
+			code := ""
+			if len(refusals) > 0 {
+				code = refusals[0].Code
+			}
+			return &KnownError{Lock: lock, Position: position, Code: code}
+		}
 		identity, _ := root["registry"].(map[string]any)
 		if digest, ok := identity["digest"].(string); ok {
-			digests[digest] = true
+			out.digests[digest] = true
 		}
 		if id, ok := identity["id"].(string); ok {
-			ids[id] = true
+			out.ids[id] = true
+		}
+		return nil
+	}
+	for i, document := range known.Indexes {
+		if err := read(false, i, document, MaxIndexBytes, "indexFormatVersion", IndexFormatVersion); err != nil {
+			return identities{}, err
 		}
 	}
-	for _, document := range known.Indexes {
-		read(document, MaxIndexBytes, "indexFormatVersion", IndexFormatVersion)
+	for i, document := range known.Locks {
+		if err := read(true, i, document, MaxLockBytes, "lockFormatVersion", LockFormatVersion); err != nil {
+			return identities{}, err
+		}
 	}
-	for _, document := range known.Locks {
-		read(document, MaxLockBytes, "lockFormatVersion", LockFormatVersion)
-	}
-	return digests, ids
+	return out, nil
 }
 
 func (a *assembly) standard() *source {

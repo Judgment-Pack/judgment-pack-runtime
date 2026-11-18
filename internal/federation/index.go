@@ -13,9 +13,10 @@ import (
 // which hold the bytes of each source's paths at the commits the index
 // names, and holds the index that assembly would write to the given one,
 // JCS for JCS. An assembly error fails the check with that error's
-// diagnostics, and no FED-INDEX-MISMATCH. The error reports a document that
-// could not be written in its canonical form, which an admitted document
-// never is.
+// diagnostics, and no FED-INDEX-MISMATCH. The error is a *KnownError for a
+// known index or lock that is not admitted, with no report; otherwise it
+// reports a document that could not be written in its canonical form, which
+// an admitted document never is.
 func CheckIndex(in Input, index registry.Document) (Report, error) {
 	a := &assembly{collected: &collector{}}
 	if err := a.run(in); err != nil {

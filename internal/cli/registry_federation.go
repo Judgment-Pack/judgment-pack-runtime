@@ -2,7 +2,9 @@ package cli
 
 import (
 	"errors"
+	"fmt"
 	"io/fs"
+	"strconv"
 	"strings"
 
 	"github.com/Judgment-Pack/judgment-pack-runtime/internal/federation"
@@ -60,7 +62,7 @@ func (a *App) registryAssembleCommand() *cobra.Command {
 			}
 			out, err := federation.Assemble(in)
 			if err != nil {
-				return a.operational(name, "json", result.ExitIO, "JPS-OUTPUT-WRITE", "The assembly could not be written in its canonical form.")
+				return a.federationFailure(name, inputs, err, "The assembly could not be written in its canonical form.")
 			}
 			if out.Report.Valid {
 				for _, write := range []struct {
@@ -105,7 +107,7 @@ func (a *App) registryCheckIndexCommand() *cobra.Command {
 			}
 			report, err := federation.CheckIndex(in, document)
 			if err != nil {
-				return a.operational(name, "json", result.ExitIO, "JPS-OUTPUT-WRITE", "The check could not be written in its canonical form.")
+				return a.federationFailure(name, inputs, err, "The check could not be written in its canonical form.")
 			}
 			return a.federationReport(report)
 		},
@@ -113,6 +115,26 @@ func (a *App) registryCheckIndexCommand() *cobra.Command {
 	inputs.register(command)
 	command.Flags().StringVar(&index, "index", "", "The assembled index to check (or - for standard input)")
 	return command
+}
+
+// federationFailure refuses an assembly that returned an error: a known
+// index or lock that is not admitted is an input error naming the flag and
+// the file it gave, and anything else is an output that could not be
+// written.
+func (a *App) federationFailure(name string, inputs *federationInputs, err error, unwritten string) error {
+	var known *federation.KnownError
+	if !errors.As(err, &known) {
+		return a.operational(name, "json", result.ExitIO, "JPS-OUTPUT-WRITE", unwritten)
+	}
+	flag, paths := "--known-index", inputs.knownIndex
+	if known.Lock {
+		flag, paths = "--known-lock", inputs.knownLocks
+	}
+	given := ""
+	if known.Position >= 0 && known.Position < len(paths) {
+		given = " " + strconv.Quote(paths[known.Position])
+	}
+	return a.operational(name, "json", result.ExitIO, "JPS-INPUT-READ", fmt.Sprintf("The %s%s (number %d) could not be admitted (%s): a known index or lock that cannot be read cannot refuse the source it names.", flag, given, known.Position+1, known.Code))
 }
 
 // federationDocument reads one bounded input; one over its bound is given

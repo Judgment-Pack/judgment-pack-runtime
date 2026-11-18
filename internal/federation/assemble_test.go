@@ -2,6 +2,7 @@ package federation
 
 import (
 	"bytes"
+	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -115,7 +116,8 @@ func TestManifestDocumentBound(t *testing.T) {
 }
 
 // A known index or lock names its registry when admitted under its bound;
-// one over it is not admitted and names nothing (§4: no code refuses one).
+// one over it is not admitted, and the assembly is refused with a
+// *KnownError rather than read as if the list did not name the source.
 func TestKnownDocumentBounds(t *testing.T) {
 	in := twoSources(t)
 	identity := `{"%s":"1.1.0","registry":{"id":"https://example.invalid/registries/billing"}}`
@@ -131,14 +133,79 @@ func TestKnownDocumentBounds(t *testing.T) {
 		c.set(&in.Known, registry.Document{Data: padded(t, data, c.bound)})
 		expectFound(t, found(assemble(t, in).Report.Diagnostics), "FED-SOURCE-ASSEMBLED registry billing")
 		c.set(&in.Known, registry.Document{Data: padded(t, data, c.bound+1)})
-		expectFound(t, found(assemble(t, in).Report.Diagnostics))
+		out, err := Assemble(in)
+		var known *KnownError
+		if !errors.As(err, &known) || known.Code != "REG-DOC-SIZE" || out.Report.Valid || out.Registry != nil || out.Index != nil {
+			t.Errorf("%s over its bound: err %v, valid %v", c.member, err, out.Report.Valid)
+		}
 		in.Known = Known{}
+	}
+}
+
+// A known index or lock that is not admitted, whatever refuses it, fails
+// the assembly and the index check as an input error that names its list
+// and position and nothing it holds; the source it would have named never
+// passes as a repository's own.
+func TestKnownDocumentNotAdmitted(t *testing.T) {
+	const id = "https://example.invalid/registries/billing"
+	for _, list := range []struct {
+		lock   bool
+		member string
+		bound  int
+	}{{false, "indexFormatVersion", MaxIndexBytes}, {true, "lockFormatVersion", MaxLockBytes}} {
+		admitted := fmt.Sprintf(`{"%s":"1.1.0","registry":{"id":"https://example.invalid/registries/other"}}`, list.member)
+		naming := fmt.Sprintf(`{"%s":"1.1.0","registry":{"id":%q}}`, list.member, id)
+		for _, c := range []struct {
+			kind     string
+			document registry.Document
+			code     string
+		}{
+			{"oversize", registry.Document{Data: padded(t, []byte(naming), list.bound+1)}, "REG-DOC-SIZE"},
+			{"read to its bound", registry.Document{Data: []byte(naming)[:1], Oversize: true}, "REG-DOC-SIZE"},
+			{"duplicate member", registry.Document{Data: []byte(fmt.Sprintf(`{"%s":"1.1.0","registry":{"id":%q,"id":%q}}`, list.member, id, id))}, "REG-DOC-DUPLICATE"},
+			{"truncated", registry.Document{Data: []byte(naming[:len(naming)-2])}, "REG-DOC-JSON"},
+			{"not JSON", registry.Document{Data: []byte(list.member + ": 1.1.0\nregistry: {id: " + id + "}\n")}, "REG-DOC-JSON"},
+		} {
+			t.Run(fmt.Sprintf("%s %s", list.member, c.kind), func(t *testing.T) {
+				in := twoSources(t)
+				documents := []registry.Document{{Data: []byte(admitted)}, c.document}
+				if list.lock {
+					in.Known.Locks = documents
+				} else {
+					in.Known.Indexes = documents
+				}
+				check := func(operation string, report Report, err error) {
+					t.Helper()
+					var known *KnownError
+					if !errors.As(err, &known) {
+						t.Fatalf("%s: err %v, valid %v: the source the document names passed", operation, err, report.Valid)
+					}
+					if known.Lock != list.lock || known.Position != 1 || known.Code != c.code {
+						t.Errorf("%s: %+v, want lock %v at 1 with %s", operation, *known, list.lock, c.code)
+					}
+					if report.Valid || len(report.Diagnostics) != 0 {
+						t.Errorf("%s: a report beside the error: %+v", operation, report)
+					}
+					if strings.Contains(err.Error(), "example.invalid") {
+						t.Errorf("%s: the error quotes the document: %q", operation, err)
+					}
+				}
+				out, err := Assemble(in)
+				if out.Registry != nil || out.Index != nil {
+					t.Error("assemble wrote a registry or an index")
+				}
+				check("assemble", out.Report, err)
+				report, err := CheckIndex(in, registry.Document{Data: testdataFile(t, "assembled/two-sources/index.json")})
+				check("check-index", report, err)
+			})
+		}
 	}
 }
 
 func TestKnownCount(t *testing.T) {
 	in := twoSources(t)
-	placeholder := registry.Document{Data: []byte(`{}`)}
+	index := registry.Document{Data: []byte(`{"indexFormatVersion":"1.1.0"}`)}
+	lock := registry.Document{Data: []byte(`{"lockFormatVersion":"1.1.0"}`)}
 	for _, c := range []struct {
 		indexes, locks int
 		want           []string
@@ -149,10 +216,10 @@ func TestKnownCount(t *testing.T) {
 	} {
 		in.Known = Known{}
 		for range c.indexes {
-			in.Known.Indexes = append(in.Known.Indexes, placeholder)
+			in.Known.Indexes = append(in.Known.Indexes, index)
 		}
 		for range c.locks {
-			in.Known.Locks = append(in.Known.Locks, placeholder)
+			in.Known.Locks = append(in.Known.Locks, lock)
 		}
 		expectFound(t, found(assemble(t, in).Report.Diagnostics), c.want...)
 	}
