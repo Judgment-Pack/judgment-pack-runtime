@@ -14,6 +14,7 @@ import (
 
 	"github.com/Judgment-Pack/judgment-pack-runtime/internal/federation"
 	"github.com/Judgment-Pack/judgment-pack-runtime/internal/jcs"
+	"github.com/Judgment-Pack/judgment-pack-runtime/internal/registry"
 )
 
 // verifyRow is a verify row's members beyond a lock row's (the rows'
@@ -233,5 +234,46 @@ func TestVerifyRefusesAFloorOutOfRange(t *testing.T) {
 		if entries, _ := os.ReadDir(dir); len(entries) != 0 {
 			t.Fatalf("floor %d: wrote %v", floor, entries)
 		}
+	}
+}
+
+// Step 6 rebuilds each item's statement from the index's item at the same
+// position, the one step 5 compared it to: names need not be unique, so an
+// index and a lock whose two sources share a name are verified by position,
+// and the lock is accepted.
+func TestVerifyRebuildsEachStatementFromTheItemAtItsPosition(t *testing.T) {
+	r := rowByID(t, "verify-assembled")
+	dir := t.TempDir()
+	in := verifyInput(t, r, dir)
+	index := editJSON(t, in.Index.Data, func(v map[string]any) {
+		v["sources"].([]any)[1].(map[string]any)["name"] = "billing"
+	})
+	decoder := json.NewDecoder(bytes.NewReader(index))
+	decoder.UseNumber()
+	var root any
+	if err := decoder.Decode(&root); err != nil {
+		t.Fatal(err)
+	}
+	digest, err := registry.Digest(root)
+	if err != nil {
+		t.Fatal(err)
+	}
+	lock := editJSON(t, in.Lock.Data, func(v map[string]any) {
+		v["index"].(map[string]any)["digest"] = digest
+		v["sources"].([]any)[1].(map[string]any)["name"] = "billing"
+	})
+	signature, err := signerOf(t, seedTest1).SignRegistryLock(federation.LockDigest(lock))
+	if err != nil {
+		t.Fatal(err)
+	}
+	in.Index = &registry.Document{Data: index}
+	in.Lock = registry.Document{Data: lock}
+	in.LockSignatures = []federation.GivenDocument{federation.Held(registry.Document{Data: signature})}
+	out, err := federation.Verify(in)
+	if err != nil || !out.Report.Valid {
+		t.Fatalf("%+v %v", out.Report, err)
+	}
+	if got, err := federation.NewRecordStore(dir).Read(*r.Expect.RegistryID); err != nil || got == nil || got.Digest != federation.LockDigest(lock) {
+		t.Fatalf("record %+v %v", got, err)
 	}
 }

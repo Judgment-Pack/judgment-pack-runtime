@@ -226,8 +226,8 @@ func (v *verification) run(keys map[emitterKey]int, files []map[string]EmitterFi
 // is its digest; an item no document matches is LOCK-SIG-MISSING, and a
 // document that matches none, or a second for one item, LOCK-SIG-EXTRA. Each
 // matched document is checked against the key the set names for its item
-// and the digest of the statement rebuilt from the index's item of its name,
-// never the lock's statement member. A document beyond the count is never
+// and the digest of the statement rebuilt from the index's item at the same
+// position, the one step 5 compared it to, never the lock's statement member. A document beyond the count is never
 // read; the error is one a document's reader returned.
 func (v *verification) sources(lock map[string]any) error {
 	in, collected := v.in, v.collected
@@ -268,7 +268,7 @@ func (v *verification) sources(lock map[string]any) error {
 	if in.Signers.Repositories != nil {
 		repositories = in.Signers.Repositories
 	}
-	byName := indexItems(in.Index)
+	indexed := indexItems(in.Index)
 	for i, raw := range items {
 		item := raw.(map[string]any)
 		at := Location{Document: DocumentLock, Pointer: "/sources/" + strconv.Itoa(i)}
@@ -291,11 +291,13 @@ func (v *verification) sources(lock map[string]any) error {
 			collected.add("LOCK-SIG-MISSING", at)
 			continue
 		}
-		name, _ := item["name"].(string)
-		indexItem, indexed := byName[name]
-		if !indexed {
-			// The index is missing, not admitted, or names no such
-			// source: step 5 has refused the lock.
+		var indexItem map[string]any
+		if i < len(indexed) {
+			indexItem, _ = indexed[i].(map[string]any)
+		}
+		if indexItem == nil {
+			// The index is missing, not admitted, or holds no source
+			// item at this position: step 5 has refused the lock.
 			continue
 		}
 		if failure := document.check(key, statementDigest(indexItem)); failure != nil {
@@ -305,24 +307,14 @@ func (v *verification) sources(lock map[string]any) error {
 	return nil
 }
 
-// indexItems are an admitted index's source items by name.
-func indexItems(index *registry.Document) map[string]any {
-	out := map[string]any{}
+// indexItems are an admitted index's source items, in its order.
+func indexItems(index *registry.Document) []any {
 	if index == nil || index.Oversize {
-		return out
+		return nil
 	}
 	root, _ := registry.AdmitDocument(index.Data, MaxIndexBytes, "indexFormatVersion", IndexFormatVersion, registry.Location{Document: DocumentIndex})
 	items, _ := root["sources"].([]any)
-	for _, raw := range items {
-		if item, isObject := raw.(map[string]any); isObject {
-			if name, isString := item["name"].(string); isString {
-				if _, seen := out[name]; !seen {
-					out[name] = item
-				}
-			}
-		}
-	}
-	return out
+	return items
 }
 
 // rest is §9's steps 2 to 5 and 8 with the documents given: the registry,
