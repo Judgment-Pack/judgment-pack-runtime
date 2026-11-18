@@ -1,12 +1,12 @@
 {
   "repository": "https://github.com/Judgment-Pack/judgment-pack-spec",
-  "release": null,
-  "pullRequest": "https://github.com/Judgment-Pack/judgment-pack-spec/pull/376",
-  "revision": "48fc63539b619f91a64fdcb60fc18a8afeeb01a4",
+  "release": "terraform-file-v1.0.0",
+  "pullRequest": "https://github.com/Judgment-Pack/judgment-pack-spec/pull/378",
+  "revision": "5d7feab2b51b0f5ec81b5ce8d616f9e4045c62af",
   "files": {
     "1.0.0/codes.json": {
       "upstream": "conformance/terraform-file/1.0.0/codes.json",
-      "sha256": "6f5d4536b66606427354a80e5fdc4a036d750d681f509aa9a005c9f0e5aa1e6c"
+      "sha256": "c5c4b0125fcc15a3d4d4cb4df319b10a4734d99d6a68f1ba44d3c896c86ed667"
     },
     "1.0.0/declarations/declaration-actions-empty-on-state.json": {
       "upstream": "conformance/terraform-file/1.0.0/declarations/declaration-actions-empty-on-state.json",
@@ -290,11 +290,11 @@
     },
     "1.0.0/formats.json": {
       "upstream": "conformance/terraform-file/1.0.0/formats.json",
-      "sha256": "8e3915a27aba507db50cfeaf6defceffb28f06c5a60788813fdb74e7cdc1176c"
+      "sha256": "4ba4e183d80487646d98a79ccc95fdc9a72e281a9a1d21da0b8134c57e0780ac"
     },
     "1.0.0/manifest.json": {
       "upstream": "conformance/terraform-file/1.0.0/manifest.json",
-      "sha256": "47cb7978196ba309423257726470d0c309b2d2e6c1d7a5142a006e9ba22df4e8"
+      "sha256": "2d73f70d52d6cbe389cc8a6ba0bb6a47c9642d0e662b080f23541d499856f7a0"
     },
     "1.0.0/vectors/batch/batch-deposed-id-256.expected.jsonl": {
       "upstream": "conformance/terraform-file/1.0.0/vectors/batch/batch-deposed-id-256.expected.jsonl",
