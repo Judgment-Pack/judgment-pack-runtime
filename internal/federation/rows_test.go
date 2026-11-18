@@ -22,7 +22,7 @@ import (
 var pendingClasses = []string{"lock-writer", "lock-checker", "lock-signature-verifier"}
 
 // rowCounts are how many rows each class run here has.
-var rowCounts = map[string]int{"assembler": 46, "index-checker": 5}
+var rowCounts = map[string]int{"assembler": 47, "index-checker": 5}
 
 type rowSource struct {
 	Commit string            `json:"commit"`

@@ -16,7 +16,7 @@ import (
 // vendor: agreement on them is not a cross-vendor claim.
 const (
 	rowsDir      = "testdata/1.1.0"
-	rowsRevision = "c47d2b4154785b92a644d3c90642f0db355916d8"
+	rowsRevision = "e0d5a986fc6e24e34bcc26631f2af6aa6b1b7515"
 	rowsRelease  = "proposed (not tagged)"
 )
 
@@ -41,6 +41,7 @@ func TestVendoredRowsKeepTheirUpstreamDigests(t *testing.T) {
 	pulls := []string{
 		"https://github.com/Judgment-Pack/judgment-pack-spec/pull/383",
 		"https://github.com/Judgment-Pack/judgment-pack-spec/pull/384",
+		"https://github.com/Judgment-Pack/judgment-pack-spec/pull/386",
 	}
 	if pin.Repository != "https://github.com/Judgment-Pack/judgment-pack-spec" || pin.Release != rowsRelease || pin.Revision != rowsRevision || !slices.Equal(pin.PullRequest, pulls) {
 		t.Fatalf("the rows are pinned to %s at %q, %s, %v", pin.Repository, pin.Release, pin.Revision, pin.PullRequest)
