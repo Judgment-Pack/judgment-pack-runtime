@@ -257,6 +257,11 @@ func TestWriterSignerSet(t *testing.T) {
 		"standard repository in": func(in *federation.WriteInput) {
 			in.Signers.Repositories["https://example.invalid/scm/platform"] = otherKey
 		},
+		// §11, One key, one role: one key given to two repository
+		// identities, though the lock names only one of them.
+		"one key for two repositories": func(in *federation.WriteInput) {
+			in.Signers.Repositories["https://example.invalid/scm/ledger"] = in.Signers.Repositories[billing]
+		},
 	} {
 		t.Run(name, func(t *testing.T) {
 			in := writeInput(t, r)
@@ -389,6 +394,66 @@ func TestWriterInputs(t *testing.T) {
 			var input *federation.InputError
 			if !errors.As(err, &input) || lock != nil {
 				t.Fatalf("got %s, %v; want an input error", lock, err)
+			}
+		})
+	}
+}
+
+// TestWriterSignatureAdmittedFirst holds the order in which a source
+// signature document is read: it is admitted by registry §2.2 under its
+// bound (§2) before its members are read (§11), so a number outside the
+// number rule refuses the document (LOCK-SIG-DOCUMENT) even in a member that
+// is not defined, which alone is LOCK-SIG-MEMBER.
+func TestWriterSignatureAdmittedFirst(t *testing.T) {
+	r := rowByID(t, "write-assembled")
+	for member, want := range map[string]string{
+		`"x":9007199254740993,`: "LOCK-SIG-DOCUMENT",
+		`"x":9007199254740991,`: "LOCK-SIG-MEMBER",
+	} {
+		t.Run(want, func(t *testing.T) {
+			in := writeInput(t, r)
+			data := in.SourceSignatures["billing"].Data
+			in.SourceSignatures["billing"] = registry.Document{Data: append([]byte("{"+member), data[1:]...)}
+			lock, err := federation.WriteLock(in)
+			if got := refusalCodes(t, err); !slices.Equal(got, []string{want}) || lock != nil {
+				t.Fatalf("refused %v, want [%s] and no lock", got, want)
+			}
+		})
+	}
+}
+
+// TestCheckerRefusesAnEmitterNotLocked holds the checker to §§7 and 9: a
+// lock lists one item per emitter manifest its writer was given, so a
+// manifest given that the lock does not list, or one given for a lock that
+// names no emitters, differs from the lock and is LOCK-EMITTER-MISMATCH at
+// /emitters, never left uncompared.
+func TestCheckerRefusesAnEmitterNotLocked(t *testing.T) {
+	withEmitters := rowByID(t, "check-emitters")
+	checkInput := func(r row, emitters []federation.Emitter) federation.CheckInput {
+		in := federation.CheckInput{Lock: rowDocument(t, r.Lock), Registry: rowDocument(t, r.Registry), Emitters: emitters, Expect: rowExpect(r)}
+		for _, file := range r.Kinds {
+			in.Kinds = append(in.Kinds, rowDocument(t, file))
+		}
+		return in
+	}
+	another := func() []federation.Emitter {
+		emitters := rowEmitters(t, withEmitters)
+		other := emitters[0]
+		other.Path = "emitters/other.json"
+		return append(emitters, other)
+	}
+	for name, in := range map[string]federation.CheckInput{
+		"an emitter the lock does not list":     checkInput(withEmitters, another()),
+		"an emitter for a lock that names none": checkInput(rowByID(t, "check-single"), rowEmitters(t, withEmitters)),
+	} {
+		t.Run(name, func(t *testing.T) {
+			report, err := federation.CheckLock(in)
+			if err != nil {
+				t.Fatal(err)
+			}
+			want := federation.Location{Document: federation.DocumentLock, Pointer: "/emitters"}
+			if report.Valid || len(report.Diagnostics) != 1 || report.Diagnostics[0].Code != "LOCK-EMITTER-MISMATCH" || report.Diagnostics[0].Location != want {
+				t.Fatalf("valid %v, diagnostics %+v; want LOCK-EMITTER-MISMATCH at /emitters alone", report.Valid, report.Diagnostics)
 			}
 		})
 	}

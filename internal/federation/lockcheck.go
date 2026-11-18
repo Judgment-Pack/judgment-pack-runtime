@@ -188,20 +188,29 @@ func checkIndex(lock map[string]any, index *registry.Document, collected *collec
 
 // checkEmitters is step 8: a lock that names emitters is checked with them;
 // each manifest and file it lists is given and equal to its item, and no
-// file a manifest's owns matches is absent from its item.
+// file a manifest's owns matches is absent from its item. The lock has one
+// item per emitter manifest its writer was given (§7), so a manifest given
+// that the lock does not list, or one given for a lock that names no
+// emitters, differs from the lock (LOCK-EMITTER-MISMATCH at /emitters): it is
+// refused, never left uncompared.
 func checkEmitters(lock map[string]any, emitters []Emitter, keys map[emitterKey]int, files []map[string]EmitterFile, collected *collector) {
 	locked, named := lock["emitters"].([]any)
 	if !named {
+		if len(emitters) > 0 {
+			collected.add("LOCK-EMITTER-MISMATCH", Location{Document: DocumentLock, Pointer: "/emitters"})
+		}
 		return
 	}
 	if len(emitters) == 0 {
 		collected.add("LOCK-EMITTER-MISSING", Location{Document: DocumentLock, Pointer: "/emitters"})
 		return
 	}
+	listedEmitters := map[emitterKey]bool{}
 	for i, raw := range locked {
 		item := raw.(map[string]any)
 		at := "/emitters/" + strconv.Itoa(i)
 		source, _ := item["source"].(string)
+		listedEmitters[emitterKey{source, item["path"].(string)}] = true
 		position, given := keys[emitterKey{source, item["path"].(string)}]
 		if !given {
 			collected.add("LOCK-EMITTER-MISSING", Location{Document: DocumentLock, Pointer: at})
@@ -229,6 +238,11 @@ func checkEmitters(lock map[string]any, emitters []Emitter, keys map[emitterKey]
 			if !listed[file.Path] && ownedBy(owns, file.Path) {
 				collected.add("LOCK-EMITTER-MISMATCH", Location{Document: DocumentLock, Pointer: at})
 			}
+		}
+	}
+	for key := range keys {
+		if !listedEmitters[key] {
+			collected.add("LOCK-EMITTER-MISMATCH", Location{Document: DocumentLock, Pointer: "/emitters"})
 		}
 	}
 }

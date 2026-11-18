@@ -2,6 +2,8 @@ package cli
 
 import (
 	"bytes"
+	"crypto/ed25519"
+	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"io/fs"
@@ -13,6 +15,8 @@ import (
 	"testing"
 
 	"github.com/Judgment-Pack/judgment-pack-runtime/internal/emit"
+	"github.com/Judgment-Pack/judgment-pack-runtime/internal/jcs"
+	"github.com/Judgment-Pack/judgment-pack-runtime/internal/registry"
 )
 
 type lockRowFile struct {
@@ -459,5 +463,149 @@ func TestRegistryLockEmitterLink(t *testing.T) {
 	code, stdout, _ := runTest(t, args, "")
 	if code != 4 || strings.Contains(stdout, `"valid"`) {
 		t.Fatalf("exit=%d, want 4 and no report; stdout=%q", code, stdout)
+	}
+}
+
+// TestRegistryLockStandardOnly writes and checks the lock of an assembly of
+// the standard source alone (§3): it needs no repository's key, so a writer
+// given no --repository-key has an empty repository key map, not none. The
+// standard's statement is signed here with RFC 8032's published TEST 1 seed,
+// whose public key the rows' signer set names (testdata README).
+func TestRegistryLockStandardOnly(t *testing.T) {
+	r := lockRowNamed(t, "lock-writer", "write-assembled")
+	dir := t.TempDir()
+	var manifest map[string]any
+	if err := json.Unmarshal(federationFile(t, r.Federation), &manifest); err != nil {
+		t.Fatal(err)
+	}
+	var standard []any
+	for _, s := range manifest["sources"].([]any) {
+		if s.(map[string]any)["name"] == "standard" {
+			standard = append(standard, s)
+		}
+	}
+	manifest["sources"] = standard
+	manifestPath := filepath.Join(dir, "federation.json")
+	if data, err := json.Marshal(manifest); err != nil || os.WriteFile(manifestPath, data, 0o600) != nil {
+		t.Fatalf("the manifest could not be written: %v", err)
+	}
+	// The standard's registry with no entry of another source's to name.
+	source := r.Sources["standard"]
+	files := map[string]string{}
+	for path, file := range source.Files {
+		files[path] = file
+	}
+	files["registry.json"] = "sources/platform/registry-subset.json"
+	source.Files = files
+	one := r.federationRow
+	one.Sources = map[string]struct {
+		Commit string            `json:"commit"`
+		Files  map[string]string `json:"files"`
+	}{"standard": source}
+	sources := federationArguments(t, one)
+	if sources[0] != "--federation" {
+		t.Fatalf("arguments %v", sources)
+	}
+	sources[1] = manifestPath
+	registryPath, indexPath, lockPath := filepath.Join(dir, "registry.json"), filepath.Join(dir, "index.json"), filepath.Join(dir, "federation.lock.json")
+	assemble := append([]string{"registry", "assemble", "--registry-out", registryPath, "--index-out", indexPath}, sources...)
+	if code, stdout, _ := runTest(t, assemble, ""); code != 0 {
+		t.Fatalf("assemble: exit %d, stdout %q", code, stdout)
+	}
+	signaturePath := filepath.Join(dir, "standard.sig.json")
+	if err := os.WriteFile(signaturePath, signStandardStatement(t, indexPath), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	write := append([]string{"registry", "lock", "write", "--first-serial", "1", "--out", lockPath, "--key", r.Signers.Key,
+		"--source-signature", "standard=" + signaturePath}, sources...)
+	if code, stdout, stderr := runTest(t, write, ""); code != 0 || stdout != "" {
+		t.Fatalf("write: exit %d, stdout %q, stderr %q", code, stdout, stderr)
+	}
+	check := []string{"registry", "lock", "check", "--lock", lockPath, "--registry", registryPath, "--index", indexPath,
+		"--kind", federationPath(t, "kinds/database.json"), "--kind", federationPath(t, "kinds/db-role.json"),
+		"--registry-id", manifest["registry"].(map[string]any)["id"].(string), "--require-index", "true"}
+	if code, stdout, _ := runTest(t, check, ""); code != 0 || !strings.Contains(stdout, `"valid":true`) {
+		t.Fatalf("check: exit %d, stdout %q", code, stdout)
+	}
+}
+
+// signStandardStatement is a source signature document (§10.2) over the
+// statement of an index's one source, signed with RFC 8032 TEST 1's seed.
+func signStandardStatement(t *testing.T, indexPath string) []byte {
+	t.Helper()
+	raw, err := os.ReadFile(indexPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var index struct {
+		Sources []struct {
+			Repository string           `json:"repository"`
+			Commit     string           `json:"commit"`
+			Documents  []map[string]any `json:"documents"`
+		} `json:"sources"`
+	}
+	if err := json.Unmarshal(raw, &index); err != nil || len(index.Sources) != 1 {
+		t.Fatalf("the index has not one source: %v", err)
+	}
+	item := index.Sources[0]
+	documents := []any{}
+	for _, d := range item.Documents {
+		documents = append(documents, map[string]any{"path": d["path"], "role": d["role"], "contentDigest": d["contentDigest"], "digest": d["digest"]})
+	}
+	digest, err := registry.Digest(map[string]any{"repository": item.Repository, "commit": item.Commit, "documents": documents})
+	if err != nil {
+		t.Fatal(err)
+	}
+	signed, err := jcs.EncodeDocument(map[string]any{"sourceDigest": digest, "sourceSignatureVersion": "1.1.0"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	seed, _ := hex.DecodeString("9d61b19deffd5a60ba844af492ec2cc44449c5697b326919703bac031cae7f60")
+	private := ed25519.NewKeyFromSeed(seed)
+	signature := ed25519.Sign(private, append([]byte("judgment-pack-registry/source-signature/1:"), signed...))
+	document, err := jcs.EncodeDocument(map[string]any{
+		"algorithm": "ed25519", "publicKey": hex.EncodeToString(private.Public().(ed25519.PublicKey)), "signature": hex.EncodeToString(signature),
+		"sourceDigest": digest, "sourceSignatureVersion": "1.1.0",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	return append(document, '\n')
+}
+
+// TestRegistryLockFirstSerialOutOfRange gives a first serial that is an
+// integer but out of range, even of an int64: no lock of its form has it, so
+// the writer refuses it as LOCK-FORM and exits 1, as for any serial out of
+// range. Text that is no integer is a usage error and exits 3.
+func TestRegistryLockFirstSerialOutOfRange(t *testing.T) {
+	r := lockRowNamed(t, "lock-writer", "write-first-serial")
+	out := filepath.Join(t.TempDir(), "x.lock.json")
+	args := []string{"registry", "lock", "write", "--registry", federationPath(t, r.Registry), "--out", out}
+	for _, kind := range r.Kinds {
+		args = append(args, "--kind", federationPath(t, kind))
+	}
+	for serial, want := range map[string]int{
+		"99999999999999999999":  1,
+		"-99999999999999999999": 1,
+		"9007199254740992":      1,
+		"0":                     1,
+		"1.5":                   3,
+		"12x":                   3,
+	} {
+		t.Run(serial, func(t *testing.T) {
+			code, stdout, _ := runTest(t, append(args, "--first-serial", serial), "")
+			if code != want {
+				t.Fatalf("exit %d, want %d; stdout %q", code, want, stdout)
+			}
+			if want == 1 && !slices.Equal(refusedCodes(t, []byte(stdout)), []string{"LOCK-FORM"}) {
+				t.Fatalf("stdout %q, want LOCK-FORM refused", stdout)
+			}
+			if want == 3 && strings.Contains(stdout, `"refused"`) {
+				t.Fatalf("a usage error wrote a refusal: %q", stdout)
+			}
+			if _, err := os.Lstat(out); !errors.Is(err, fs.ErrNotExist) {
+				t.Fatal("a lock was written")
+			}
+		})
 	}
 }
