@@ -178,22 +178,20 @@ took it under that name and severity.
 
 The `terraform-file` reader (`internal/terraformfile`, ADR-0097) is reached through `jpack
 terraform facts`, RFC 0038 §6's batch tool. RFC 0038 calls the batch a product format of the
-reference runtime. Its lines are RFC 8785 canonical bytes with no selector of their own, and they
-are provisional with the reader: a change to their bytes for the same file is named in the release
-notes. The dialect companion's §4.5 (`spec/dialect.md`, proposed) makes `terraform-file` a
-proposed kind of dialect version 3, and the reading is the terraform-file companion's
-(`spec/terraform-file.md`, reading `1.0.0`, proposed, whose first release is to be the scoped tag
-`terraform-file-v1.0.0`). The reader's refusal codes are that companion's (§9): `TF-SIZE`,
-`TF-JSON`, `TF-FORMAT`, `TF-DOCUMENT`, `TF-SENSITIVITY`, `TF-SELECT-BOUND`, `TF-NUMBER` and
-`TF-VALUE-LIMIT`. Its first accepted `format_version` table (plan `1.0`, `1.1` and `1.2`; state
+reference runtime. Its lines are RFC 8785 canonical bytes with no selector of their own, so they
+are promised as their bytes. The reading is the terraform-file companion's (`spec/terraform-file.md`,
+reading `1.0.0`), released on the scoped tag `terraform-file-v1.0.0` and not yet stable. The
+dialect companion's §4.5 (`spec/dialect.md`, proposed) makes `terraform-file` a proposed kind of
+dialect version 3 and cites that reading. The reader's refusal codes are the companion's (§9):
+`TF-SIZE`, `TF-JSON`, `TF-FORMAT`, `TF-DOCUMENT`, `TF-SENSITIVITY`, `TF-SELECT-BOUND`, `TF-NUMBER`
+and `TF-VALUE-LIMIT`. Its first accepted `format_version` table (plan `1.0`, `1.1` and `1.2`; state
 `1.0`) has the release `1.0.0`, which the acquisition record carries as `formatTable` (§4, §7).
-The companion has each accepted `format_version` backed by vectors written by hand to the shape
-that version documents, with no Terraform run and no recorded output, proposed with it; this
-runtime's tests run them at a pinned Spec revision (`internal/terraformfile/testdata`, by digest).
-The companion's first release, `terraform-file-v1.0.0`, publishes the text, the code list, the table
-and the vectors as released and not yet stable, and the release that names the reading part of the
-line pins the vectors to that tag's commit. From that release, the command, its batch lines, the
-codes and the table are promised as [The terraform-file reading](#the-terraform-file-reading) says.
+The companion backs each accepted `format_version` with vectors written by hand to the shape that
+version documents, with no Terraform run and no recorded output, released with the text; this
+runtime's tests run them at the tag's commit (`internal/terraformfile/testdata`, by digest).
+v0.52.0 names the reading part of the line in its release notes, so from v0.52.0 the command, its
+batch lines, the codes and the table are promised as
+[The terraform-file reading](#the-terraform-file-reading) says.
 
 `jpack emit` (ADR-0098) follows the same rule. It reads and writes these formats:
 

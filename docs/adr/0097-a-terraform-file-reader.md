@@ -413,3 +413,23 @@ by the manifest's `generate` rule.
 
 Every row run gives its one expected result. The vectors are proposed and back no claim, so
 CONFORMANCE.md is unchanged.
+
+## Amendment: the companion is released, and the reading joins the registry line (2026-11-18)
+
+The terraform-file companion's first release, the spec tag `terraform-file-v1.0.0`, publishes
+reading `1.0.0`, its code list, the format table release `1.0.0` and the vectors as released and
+not yet stable. The companion's §12 makes it stable when a second, independently written reader
+agrees on every vector. The spec repository's own reader agrees with this one on all 206.
+
+From v0.52.0, `jpack terraform facts`, its batch lines, the eight `TF-*` codes and the table are
+part of the registry line, as VERSIONING.md's "The terraform-file reading" states. The amendment
+above, which kept the codes, the table and the batch lines provisional until a spec release carried
+the companion, is superseded on that point. Nothing in the reader changes: every file is read or
+refused as before, with the same bytes and the same code.
+
+The vendored vectors are pinned to the tag's commit, with `release` `terraform-file-v1.0.0` in
+`provenance.json`. The tag's vectors are those of the amendment above, grown to 206 before the
+release: 159 `read` and `read-stream` rows (75 accepted, 84 refused), 10 `batch` rows, and 37
+declarations not of §2's form, of which the 21 a command line can write are run as unusable
+command lines (exit 3) and 16 are not run. Every row run gives its one expected result. The
+vectors back no claim in CONFORMANCE.md, which is unchanged.

@@ -2,8 +2,18 @@
 
 All notable changes to tagged releases are documented here.
 
-## Unreleased
+## 0.52.0 - 2026-11-18
 
+- **The terraform-file reading joins the registry line** (VERSIONING.md, "The terraform-file
+  reading"; ADR-0097's amendment of 2026-11-18). The terraform-file companion's first release, the
+  spec tag `terraform-file-v1.0.0`, publishes reading `1.0.0`, its code list, the format table
+  release `1.0.0` and the 206 vectors as released and not yet stable, and this release names the
+  reading part of the line in its notes. From v0.52.0, `jpack terraform facts`, its flags and exit
+  codes, its batch lines as their bytes, the eight `TF-*` codes, the table and the bounds are under
+  the line's promise. The vendored vectors are pinned to the tag's commit, with `release`
+  `terraform-file-v1.0.0` <!-- PLACEHOLDER(v0.52.0): move the pin in internal/terraformfile/testdata/provenance.json to the tag's commit, re-vendor codes.json, formats.json and manifest.json, and expect status released in vectors_test.go -->. The help of `jpack terraform`, the codes' comments, SECURITY.md and the
+  mutation table's provisional column (now `no` for every `TF-*` row) follow. No byte the command
+  writes and no code it reports changes. The conformance claim in CONFORMANCE.md is unchanged.
 - **The `terraform-file` reader's format table is release `1.0.0`, and the companion's vectors
   run in the tests** (ADR-0097's amendment of 2026-11-17). The reading now has a companion of its
   own, `spec/terraform-file.md` (reading `1.0.0`, proposed, whose first release is to be
@@ -17,9 +27,8 @@ All notable changes to tagged releases are documented here.
   malformed declarations through its flags, each an unusable command line (exit 3); the other 16
   have no command-line form and are not run. Every row run gives its one expected result, the
   same result the companion's second, independently written reader gives. The help
-  of `jpack terraform` and VERSIONING.md now name the companion; the command, its batch lines, the
-  `TF-*` codes and the table stay provisional and outside the registry line's promise. The
-  conformance claim in CONFORMANCE.md is unchanged.
+  of `jpack terraform` and VERSIONING.md now name the companion. The conformance claim in
+  CONFORMANCE.md is unchanged.
 - **The fuzz workflow takes a fuzzing time on demand** (`.github/workflows/fuzz.yml`). A manual
   run accepts `fuzztime` (default `30s`; a whole number with `s`, `m` or `h`, at most `340m`), and
   each target's job limit follows it: the time plus ten minutes, at most 350 minutes. A value of
