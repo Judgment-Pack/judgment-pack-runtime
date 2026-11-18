@@ -188,12 +188,19 @@ jpack registry lock verify --lock registry.lock.json \
   registry id, and a write or read back that fails; the lock is not accepted, and the reason is
   written to standard error. The directory is created with mode 0700 and the record with 0600; a
   directory or record its group or other users can write, a record that is a symbolic link or not
-  a regular file, and a directory that is a symbolic link, are refused the same way.
+  a regular file, and a directory that is a symbolic link (or on Windows a junction), are refused
+  the same way.
 - On Windows, a record's and its directory's permissions are not checked (their ACLs are not
   read), and the directory is not synced, which Windows does not offer: the temporary file's bytes
   are flushed before the rename, and the rename replaces the record in one step, but without
   write-through, so a power loss just after it may leave the record as it was before. A floor no
   lower than the last serial accepted covers that.
+- A lock file the verifier cannot remove once it has written the record is `LOCK-SERIAL-STATE`
+  at once, naming the lock file, and the lock is not accepted, though the record already holds it.
+  When the write itself failed, only that failure is named: a lock file it then cannot remove is
+  not named until the next verification finds it, which reports `LOCK-SERIAL-STATE`.
+- The record's and the directory's owner is not checked: on unix only their group and world write
+  bits are.
 
 ## Bounds
 
