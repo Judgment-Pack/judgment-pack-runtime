@@ -159,8 +159,9 @@ jpack registry lock verify --lock registry.lock.json \
 - `--keys` names the expected signer set, a JSON object `{"key": ..., "repositories": {...}}`:
   the lock's (the standard owner's) key and, for an assembly, each repository identity's key,
   64 lowercase hexadecimal characters each. It is given every time and never taken from a
-  document. Every key is held to the trust rule (canonical, not of small order), and a signature
-  is checked with Ed25519 as RFC 8032 states it, an S of the group order or more refused.
+  document. Every key is held to the trust rule (its canonical encoding, a valid point on the
+  curve, not of small order), and a signature is checked with Ed25519 as RFC 8032 states it, an
+  S of the group order or more refused.
 - Signature documents are counted in the order given, the `--signature` documents first. Only
   the first lock signature is read; every document beyond the lock's sources count plus one is
   `LOCK-SIG-EXTRA` and is never opened, so a path there that names nothing, a directory or a pipe
@@ -237,8 +238,6 @@ Where the text leaves a choice open and no row decides it, this reader reads it 
   `LOCK-EMITTER-MISMATCH`, since no host check of it exits 0;
 - a file's source is not compared for a single registry's lock;
 - an index item that is not of its form is `LOCK-SOURCES-MISMATCH` at the lock's item;
-- `verify` reads the bytes of every signature document it is given, each within 4 KiB, and parses
-  none beyond the count;
 - a record that is of another registry id than the one its name is the hash of is
   `LOCK-SERIAL-STATE`.
 
