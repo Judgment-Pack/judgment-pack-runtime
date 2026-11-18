@@ -119,8 +119,8 @@ func FuzzVerify(f *testing.F) {
 		floor := int64(1)
 		out, err := Verify(VerifyInput{
 			Lock:             lock,
-			LockSignatures:   []registry.Document{{Data: fuzzedLock}},
-			SourceSignatures: []registry.Document{{Data: fuzzedBilling}, standard},
+			LockSignatures:   []GivenDocument{Held(registry.Document{Data: fuzzedLock})},
+			SourceSignatures: []GivenDocument{Held(registry.Document{Data: fuzzedBilling}), Held(standard)},
 			Index:            &index,
 			Signers:          signers,
 			Expect:           Expect{RegistryID: &id, RequireIndex: &require},

@@ -511,3 +511,97 @@ func TestRegistryLockVerifyInvocation(t *testing.T) {
 		t.Errorf("a refused invocation wrote %v", entries)
 	}
 }
+
+func verifyCLIRowNamed(t *testing.T, id string) verifyCLIRow {
+	t.Helper()
+	for _, r := range verifyCLIRows(t) {
+		if r.ID == id {
+			return r
+		}
+	}
+	t.Fatalf("no verify row %s", id)
+	return verifyCLIRow{}
+}
+
+// replacedAt replaces the value of a flag's occurrence at (0 for the first).
+func replacedAt(t *testing.T, args []string, flag string, at int, value string) []string {
+	t.Helper()
+	out := append([]string(nil), args...)
+	seen := 0
+	for i := 0; i+1 < len(out); i++ {
+		if out[i] == flag {
+			if seen == at {
+				out[i+1] = value
+				return out
+			}
+			seen++
+		}
+	}
+	t.Fatalf("no %s number %d in %v", flag, at+1, args)
+	return nil
+}
+
+// beyondTheCount are rows whose document at a flag's occurrence is beyond
+// the lock's sources count plus one, or a lock signature after the first:
+// LOCK-SIG-EXTRA, never read.
+var beyondTheCount = []struct {
+	id, flag string
+	at       int
+}{
+	{"verify-second-lock-signature", "--signature", 1},
+	{"verify-signature-cap-unread", "--source-signature", 2},
+	{"verify-signature-cap-after-lock", "--source-signature", 0},
+}
+
+// A document beyond the count is never opened, so a path there that names
+// nothing, or a directory, gives the row's own report, not an input error.
+func TestRegistryLockVerifyNeverReadsADocumentBeyondTheCount(t *testing.T) {
+	for _, c := range beyondTheCount {
+		for _, lay := range []struct {
+			label string
+			path  func(t *testing.T) string
+		}{
+			{"nothing", func(t *testing.T) string { return filepath.Join(t.TempDir(), "absent.sig.json") }},
+			{"directory", func(t *testing.T) string { return t.TempDir() }},
+		} {
+			t.Run(c.id+"/"+lay.label, func(t *testing.T) {
+				r := verifyCLIRowNamed(t, c.id)
+				dir := t.TempDir()
+				chmod(t, dir, 0o700)
+				args := replacedAt(t, verifyArguments(t, r, dir, *r.Expect.RegistryID), c.flag, c.at, lay.path(t))
+				code, stdout, stderr := runTest(t, args, "")
+				checkFederationReport(t, r.federationRow, code, stdout, stderr)
+				if entries, _ := os.ReadDir(dir); len(entries) != 0 {
+					t.Errorf("a refused lock wrote %v", entries)
+				}
+			})
+		}
+	}
+}
+
+// A document within the count that cannot be read is an input error, as any
+// other input is, and nothing is recorded: the first lock signature, and a
+// source signature once the lock is admitted.
+func TestRegistryLockVerifyRefusesAnUnreadableDocumentWithinTheCount(t *testing.T) {
+	for _, c := range []struct {
+		id, flag string
+		at       int
+	}{
+		{"verify-first-contact", "--signature", 0},
+		{"verify-signature-cap-unread", "--source-signature", 1},
+	} {
+		t.Run(c.id, func(t *testing.T) {
+			r := verifyCLIRowNamed(t, c.id)
+			dir := t.TempDir()
+			chmod(t, dir, 0o700)
+			args := replacedAt(t, verifyArguments(t, r, dir, *r.Expect.RegistryID), c.flag, c.at, filepath.Join(t.TempDir(), "absent.sig.json"))
+			code, stdout, stderr := runTest(t, args, "")
+			if code != 4 || !strings.Contains(stdout, "JPS-INPUT-READ") || strings.Contains(stdout, "LOCK-") || stderr != "" {
+				t.Errorf("exit %d stdout %q stderr %q", code, stdout, stderr)
+			}
+			if entries, _ := os.ReadDir(dir); len(entries) != 0 {
+				t.Errorf("an input error wrote %v", entries)
+			}
+		})
+	}
+}

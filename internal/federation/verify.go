@@ -13,11 +13,13 @@ import (
 // documents; the expected signer set and the expected inputs of §9; its
 // serial record store and a floor. With Registry, the rest of §9 is checked
 // with Kinds and Emitters; with Resolved or File, coverage (§9.1). None has a
-// default, and none is taken from a lock or a document.
+// default, and none is taken from a lock or a document. A signature document
+// is given as a reader, called only when the verification reads it: one
+// beyond the count, or a lock signature after the first, is never read.
 type VerifyInput struct {
 	Lock             registry.Document
-	LockSignatures   []registry.Document
-	SourceSignatures []registry.Document
+	LockSignatures   []GivenDocument
+	SourceSignatures []GivenDocument
 	Index            *registry.Document
 	Signers          *Signers
 	Expect           Expect
@@ -32,6 +34,16 @@ type VerifyInput struct {
 	File     *CoveredFile
 }
 
+// GivenDocument reads a document given to a verifier. The verification calls
+// it once, when it reaches the document, and never for one it does not read;
+// an error it returns ends the verification and is Verify's error.
+type GivenDocument func() (registry.Document, error)
+
+// Held gives a document already read.
+func Held(document registry.Document) GivenDocument {
+	return func() (registry.Document, error) { return document, nil }
+}
+
 // Verification is a verification's result: the report, and when it holds
 // LOCK-SERIAL-STATE, why the serial record could not be read, written or
 // read back, naming the file, which the report does not carry.
@@ -43,11 +55,17 @@ type Verification struct {
 // Verify runs §11's verification, and records the lock's serial and digest
 // for the expected registry id when every step accepts it. A refused lock
 // changes no record. The error is an *InputError for inputs that give no
-// verification (no record store, or two emitters at one path), or reports a
-// report that could not be written in its canonical form.
+// verification (no record store, a signature document with no reader, or two
+// emitters at one path), the error a signature document's reader returned, or
+// reports a report that could not be written in its canonical form.
 func Verify(in VerifyInput) (Verification, error) {
 	if in.Records == nil {
 		return Verification{}, &InputError{Reason: "verification is given no serial record store"}
+	}
+	for _, given := range append(append([]GivenDocument(nil), in.LockSignatures...), in.SourceSignatures...) {
+		if given == nil {
+			return Verification{}, &InputError{Reason: "a signature document is given no reader"}
+		}
 	}
 	keys, files, err := givenEmitters(in.Emitters)
 	if err != nil {
@@ -136,7 +154,11 @@ func (v *verification) run(keys map[emitterKey]int, files []map[string]EmitterFi
 	for range in.LockSignatures[1:] {
 		v.unread()
 	}
-	lockSignature, problems := readSignature(in.LockSignatures[0], regsig.Lock)
+	given, err := in.LockSignatures[0]()
+	if err != nil {
+		return err
+	}
+	lockSignature, problems := readSignature(given, regsig.Lock)
 	v.signature(lockSignature, problems...)
 	// A lock over its bound has no bytes held to check the signature
 	// against: step 3 refuses it by its size.
@@ -166,7 +188,9 @@ func (v *verification) run(keys map[emitterKey]int, files []map[string]EmitterFi
 	checkIndex(lock, in.Index, collected)
 
 	// Step 6: the source signatures.
-	v.sources(lock)
+	if err := v.sources(lock); err != nil {
+		return err
+	}
 
 	// Step 7: the rest of §9 with the documents, and coverage.
 	if in.Registry != nil {
@@ -203,8 +227,9 @@ func (v *verification) run(keys map[emitterKey]int, files []map[string]EmitterFi
 // document that matches none, or a second for one item, LOCK-SIG-EXTRA. Each
 // matched document is checked against the key the set names for its item
 // and the digest of the statement rebuilt from the index's item of its name,
-// never the lock's statement member.
-func (v *verification) sources(lock map[string]any) {
+// never the lock's statement member. A document beyond the count is never
+// read; the error is one a document's reader returned.
+func (v *verification) sources(lock map[string]any) error {
 	in, collected := v.in, v.collected
 	items, _ := lock["sources"].([]any)
 	room := max(0, len(items)+1-len(in.LockSignatures))
@@ -216,7 +241,11 @@ func (v *verification) sources(lock map[string]any) {
 		given = given[:room]
 	}
 	matched := map[int]*signatureDocument{}
-	for _, document := range given {
+	for _, reader := range given {
+		document, err := reader()
+		if err != nil {
+			return err
+		}
 		read, problems := readSignature(document, regsig.Source)
 		if len(problems) > 0 {
 			v.signature(read, problems...)
@@ -273,6 +302,7 @@ func (v *verification) sources(lock map[string]any) {
 			v.signature(document, *failure)
 		}
 	}
+	return nil
 }
 
 // indexItems are an admitted index's source items by name.

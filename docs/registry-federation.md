@@ -160,7 +160,10 @@ jpack registry lock verify --lock registry.lock.json \
   is checked with Ed25519 as RFC 8032 states it, an S of the group order or more refused.
 - Signature documents are counted in the order given, the `--signature` documents first. Only
   the first lock signature is read; every document beyond the lock's sources count plus one is
-  `LOCK-SIG-EXTRA` and is not parsed.
+  `LOCK-SIG-EXTRA` and is never opened, so a path there that names nothing, a directory or a pipe
+  is not an input error. Each document is read when the verification reaches it, so the source
+  signatures only once the lock itself is admitted; one read there that cannot be is an input error
+  (exit 4).
 
 ### The serial record
 

@@ -113,10 +113,10 @@ func holdsRecord(t testing.TB, id, dir, registryID string, raw json.RawMessage) 
 func verifyInput(t testing.TB, r row, dir string) federation.VerifyInput {
 	in := federation.VerifyInput{Lock: rowDocument(t, r.Lock), Expect: rowExpect(r), Floor: r.Floor, Records: federation.NewRecordStore(dir)}
 	for _, name := range r.LockSignatures {
-		in.LockSignatures = append(in.LockSignatures, rowDocument(t, name))
+		in.LockSignatures = append(in.LockSignatures, federation.Held(rowDocument(t, name)))
 	}
 	for _, name := range r.SourceSignatures {
-		in.SourceSignatures = append(in.SourceSignatures, rowDocument(t, name))
+		in.SourceSignatures = append(in.SourceSignatures, federation.Held(rowDocument(t, name)))
 	}
 	if r.Signers != nil {
 		in.Signers = &federation.Signers{Key: r.Signers.Key, Repositories: r.Signers.Repositories}

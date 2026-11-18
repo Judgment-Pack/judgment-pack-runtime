@@ -295,6 +295,14 @@ func (a *App) verifyKeys(name, path string) (*federation.Signers, error) {
 	return signers, nil
 }
 
+// givenDocument is a bounded input read only when a verification reaches it,
+// with federationDocument's refusal when it cannot be read.
+func (a *App) givenDocument(name, path string, limit int, what string) federation.GivenDocument {
+	return func() (registry.Document, error) {
+		return a.federationDocument(name, path, limit, what)
+	}
+}
+
 func (a *App) registryLockVerifyCommand() *cobra.Command {
 	expect := &lockExpect{}
 	emitters := &lockEmitters{}
@@ -303,7 +311,7 @@ func (a *App) registryLockVerifyCommand() *cobra.Command {
 	command := &cobra.Command{
 		Use:     "verify --lock FILE --signature FILE [--index FILE --source-signature FILE...] --keys FILE --registry-id URI --require-index true|false --record-dir DIR [--floor N] [--registry FILE --kind FILE... [emitters]] [--environment ENV (--resolved FILE | --file PATH=LOCAL)]",
 		Short:   "Verify a lock's signatures and serial, record it, and write the report (registry 1.1.0, proposed)",
-		Long:    "Verify a lock by registry format 1.1.0 §11 (proposed), in its order: the expected inputs and the serial record; the lock signature, checked against the expected key before the lock is parsed; the lock, held to §9's step 1; its serial against the record or the floor; the index; each source's signature against the key the signer set names for it and the statement rebuilt from the index; then, when --registry is given, the rest of §9, and coverage when --resolved or --file is. Signature documents are counted in the order given, the --signature documents first: only the first lock signature is read, and every document beyond the lock's sources count plus one is LOCK-SIG-EXTRA and never parsed. --keys names the expected signer set, {\"key\",\"repositories\"}, given every time and never taken from a document. The serial record is kept in --record-dir, one file per registry id, which has no default: with no record for the registry id, --floor must be given, and a floor of 1 accepts whatever lock comes first (trust on first use, chosen by giving it). Only a lock every step accepts is recorded, by compare and set under a lock file beside the record; a lock file another verifier left behind is never removed, and is LOCK-SERIAL-STATE, named on standard error, until it is. The report is RFC 8785 canonical JSON followed by one newline, and names keys by their identifiers. Exit 0 when the lock is accepted and recorded, 1 when it is not." + lockLong,
+		Long:    "Verify a lock by registry format 1.1.0 §11 (proposed), in its order: the expected inputs and the serial record; the lock signature, checked against the expected key before the lock is parsed; the lock, held to §9's step 1; its serial against the record or the floor; the index; each source's signature against the key the signer set names for it and the statement rebuilt from the index; then, when --registry is given, the rest of §9, and coverage when --resolved or --file is. Signature documents are counted in the order given, the --signature documents first: only the first lock signature is read, and every document beyond the lock's sources count plus one is LOCK-SIG-EXTRA and never opened, so a path that names nothing, a directory or a pipe there is not an input error. --keys names the expected signer set, {\"key\",\"repositories\"}, given every time and never taken from a document. The serial record is kept in --record-dir, one file per registry id, which has no default: with no record for the registry id, --floor must be given, and a floor of 1 accepts whatever lock comes first (trust on first use, chosen by giving it). Only a lock every step accepts is recorded, by compare and set under a lock file beside the record; a lock file another verifier left behind is never removed, and is LOCK-SERIAL-STATE, named on standard error, until it is. The report is RFC 8785 canonical JSON followed by one newline, and names keys by their identifiers. Exit 0 when the lock is accepted and recorded, 1 when it is not." + lockLong,
 		Example: "jpack registry lock verify --lock registry.lock.json --signature registry.lock.json.sig.json --keys expected-keys.json --registry-id https://example.test/registries/platform --require-index false --record-dir /var/lib/registry-records --floor 1",
 		Args:    cobra.NoArgs,
 		RunE: func(_ *cobra.Command, _ []string) error {
@@ -359,19 +367,14 @@ func (a *App) registryLockVerifyCommand() *cobra.Command {
 			if in.Lock, failure = a.federationDocument(name, lockPath, federation.MaxLockBytes, "lock"); failure != nil {
 				return failure
 			}
+			// The signature documents are read when the verification
+			// reaches each: one it never reads is never opened. One read
+			// that cannot be is an input error, as any other input is.
 			for _, path := range signatures {
-				document, failure := a.federationDocument(name, path, regsig.MaxBytes, "lock signature")
-				if failure != nil {
-					return failure
-				}
-				in.LockSignatures = append(in.LockSignatures, document)
+				in.LockSignatures = append(in.LockSignatures, a.givenDocument(name, path, regsig.MaxBytes, "lock signature"))
 			}
 			for _, path := range sourceSignatures {
-				document, failure := a.federationDocument(name, path, regsig.MaxBytes, "source signature")
-				if failure != nil {
-					return failure
-				}
-				in.SourceSignatures = append(in.SourceSignatures, document)
+				in.SourceSignatures = append(in.SourceSignatures, a.givenDocument(name, path, regsig.MaxBytes, "source signature"))
 			}
 			if index != "" {
 				document, failure := a.federationDocument(name, index, federation.MaxIndexBytes, "index")
@@ -410,6 +413,12 @@ func (a *App) registryLockVerifyCommand() *cobra.Command {
 			}
 			verified, err := federation.Verify(in)
 			if err != nil {
+				var handled *handledExit
+				if errors.As(err, &handled) {
+					// A signature document that could not be read: its
+					// reader has written the refusal.
+					return err
+				}
 				if failure := a.lockInputFailure(name, err); failure != nil {
 					return failure
 				}
