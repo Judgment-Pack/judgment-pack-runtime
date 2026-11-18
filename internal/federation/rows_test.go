@@ -16,7 +16,7 @@ import (
 
 // rowCounts are how many rows each class of §15 has: every class is run
 // here.
-var rowCounts = map[string]int{"assembler": 47, "index-checker": 5, "lock-writer": 11, "lock-checker": 34, "lock-signature-verifier": 62}
+var rowCounts = map[string]int{"assembler": 47, "index-checker": 5, "lock-writer": 11, "lock-checker": 36, "lock-signature-verifier": 63}
 
 type rowSource struct {
 	Commit string            `json:"commit"`

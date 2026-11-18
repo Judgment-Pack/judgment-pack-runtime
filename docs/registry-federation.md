@@ -224,9 +224,6 @@ Where the text leaves a choice open and no row decides it, this reader reads it 
   `LOCK-EMITTER-MISMATCH`, since no host check of it exits 0;
 - a file's source is not compared for a single registry's lock;
 - an index item that is not of its form is `LOCK-SOURCES-MISMATCH` at the lock's item;
-- a verifier reads a signature document's members before any number in it: a number is a member
-  of the wrong type (an unknown member holding one is `LOCK-SIG-MEMBER`), never a document that
-  cannot be admitted;
 - `verify` reads the bytes of every signature document it is given, each within 4 KiB, and parses
   none beyond the count;
 - a record that is of another registry id than the one its name is the hash of is

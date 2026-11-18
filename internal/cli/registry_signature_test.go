@@ -424,8 +424,8 @@ func verifyArguments(t *testing.T, r verifyCLIRow, dir, registryID string) []str
 // LOCK-SERIAL-STATE.
 func TestRegistryLockVerifyRows(t *testing.T) {
 	rows := verifyCLIRows(t)
-	if len(rows) != 62 {
-		t.Fatalf("%d lock-signature-verifier rows, want 62", len(rows))
+	if len(rows) != 63 {
+		t.Fatalf("%d lock-signature-verifier rows, want 63", len(rows))
 	}
 	for _, r := range rows {
 		t.Run(r.ID, func(t *testing.T) {

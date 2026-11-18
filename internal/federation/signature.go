@@ -35,29 +35,26 @@ type signatureDocument struct {
 // pointer of the member it is at ("" for the document).
 type signatureProblem struct{ code, pointer string }
 
-// signatureLimits are the decoder's: a signature document is one flat object
-// of five strings, far below each bound, and its own bound is its size.
-var signatureLimits = carrier.Limits{MaxDepth: 32, MaxNodes: regsig.MaxBytes, MaxStringBytes: regsig.MaxBytes}
-
 // readSignature reads a signature document of a kind, with one code per
 // failure (§11): over its bound, not one JSON object in UTF-8, a member
-// given twice or a backslash (LOCK-SIG-DOCUMENT, and nothing else is read);
+// given twice, a backslash or any other document registry §2.2 refuses, such
+// as an integer above 2^53 - 1 (LOCK-SIG-DOCUMENT, and nothing else is read);
 // a version other than "1.1.0", checked first (LOCK-SIG-VERSION, and nothing
 // else is checked); a member not defined or missing (LOCK-SIG-MEMBER); an
 // algorithm other than ed25519 (LOCK-SIG-ALGORITHM); a public key not of its
 // form or refused by the trust rule (LOCK-SIG-PUBLIC-KEY); a digest or a
-// signature not of its form (LOCK-SIG-FORM). The document is decoded without
-// registry §2.2's number admission: a member holds a string or is refused as
-// a member, so a number in a member not defined is LOCK-SIG-MEMBER, and one
-// in a member defined is that member's code.
+// signature not of its form (LOCK-SIG-FORM). The document is admitted as
+// registry §2.2 admits one before any member is read, so a number it refuses
+// is LOCK-SIG-DOCUMENT wherever it is, and an admitted number in a member
+// defined is that member's code.
 func readSignature(document registry.Document, kind regsig.Kind) (*signatureDocument, []signatureProblem) {
 	whole := []signatureProblem{{"LOCK-SIG-DOCUMENT", ""}}
 	if document.Oversize || len(document.Data) > regsig.MaxBytes || bytes.IndexByte(document.Data, '\\') >= 0 {
 		return nil, whole
 	}
-	value, failure := carrier.Decode(document.Data, signatureLimits)
+	value, code, _ := registry.AdmitValue(document.Data, regsig.MaxBytes)
 	root, isObject := value.(map[string]any)
-	if failure != nil || !isObject {
+	if code != "" || !isObject {
 		return nil, whole
 	}
 	read := &signatureDocument{kind: kind, root: root}

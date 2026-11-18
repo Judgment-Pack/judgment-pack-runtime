@@ -100,8 +100,10 @@ func TestASignatureNamesItsKeyOnceRead(t *testing.T) {
 		"a member":         {strings.Replace(lock, `{`, `{"a/b~c":"x",`, 1), test1, []string{"LOCK-SIG-MEMBER"}, "/a~1b~0c"},
 		"a backslash":      {strings.Replace(lock, `ed25519`, "ed"+string(rune(0x5c))+"u0032519", 1), "", []string{"LOCK-SIG-DOCUMENT"}, ""},
 		"an uppercase key": {strings.Replace(lock, `d75a98`, `D75A98`, 1), "", []string{"LOCK-SIG-PUBLIC-KEY"}, "/publicKey"},
-		"an exponent":      {strings.Replace(lock, `{`, `{"x":1e400,`, 1), test1, []string{"LOCK-SIG-MEMBER"}, "/x"},
-		"a number key":     {strings.Replace(lock, `"publicKey":"d75a980182b10ab7d54bfed3c964073a0ee172f3daa62325af021a68f707511a"`, `"publicKey":1e400`, 1), "", []string{"LOCK-SIG-PUBLIC-KEY"}, "/publicKey"},
+		"an exponent":      {strings.Replace(lock, `{`, `{"x":1e400,`, 1), "", []string{"LOCK-SIG-DOCUMENT"}, ""},
+		"a number member":  {strings.Replace(lock, `{`, `{"x":1,`, 1), test1, []string{"LOCK-SIG-MEMBER"}, "/x"},
+		"a refused key":    {strings.Replace(lock, `"publicKey":"d75a980182b10ab7d54bfed3c964073a0ee172f3daa62325af021a68f707511a"`, `"publicKey":1e400`, 1), "", []string{"LOCK-SIG-DOCUMENT"}, ""},
+		"a number key":     {strings.Replace(lock, `"publicKey":"d75a980182b10ab7d54bfed3c964073a0ee172f3daa62325af021a68f707511a"`, `"publicKey":1`, 1), "", []string{"LOCK-SIG-PUBLIC-KEY"}, "/publicKey"},
 		"over its bound":   {lock + strings.Repeat(" ", regsig.MaxBytes), "", []string{"LOCK-SIG-DOCUMENT"}, ""},
 	} {
 		read, problems := readSignature(registry.Document{Data: []byte(c.data)}, regsig.Lock)
