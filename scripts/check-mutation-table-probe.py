@@ -210,6 +210,31 @@ expect('a mutant of an identifier its function does not hold is refused',
 expect('a test in a file built only outside Unix is declared', check.startup_listing({'TestReadFileRefusesEveryFileOutsideUnix': ['x']}) == [])
 expect('a test no file declares is refused', check.startup_listing({'TestNoSuchTestHere': ['x']}) != [])
 
+# Pending codes (registry 1.1.0's classes not built yet): no row, named by no non-test file outside
+# their table, and none left once no class is.
+federation_codes = open(check.FEDERATION_CODES, encoding='utf-8').read()
+pending = check.pending_codes(federation_codes)
+classes = check.pending_classes()
+expect('the pending codes are the LOCK- codes', pending != set() and all(c.startswith('LOCK-') for c in pending))
+expect('no FED- code is pending', not any(c.startswith('FED-') for c in pending))
+expect('the tree holds its pending codes', check.pending_problems(pending, classes, {}, {check.FEDERATION_CODES: federation_codes}) == [])
+lock = sorted(pending)[0]
+expect('a row for a pending code is refused', check.pending_problems(pending, classes, {lock: 1}, {}) != [])
+expect('a file that raises a pending code is refused',
+       check.pending_problems(pending, classes, {}, {'internal/federation/lock.go': 'func f() { add("%s", at) }' % lock}) != [])
+expect('a pending code in a comment is not raised',
+       check.pending_problems(pending, classes, {}, {'internal/federation/lock.go': '// add("%s")' % lock}) == [])
+expect('pending codes with no class left to build are refused', check.pending_problems(pending, [], {}, {}) != [])
+unmarked = federation_codes.replace('pending', 'built')
+expect('a section heading that does not say pending holds no pending code', check.pending_codes(unmarked) == set())
+with contextlib.redirect_stderr(io.StringIO()):
+    try:
+        check.pending_classes('var pendingClasses []string')
+        refused = False
+    except SystemExit:
+        refused = True
+expect('a pendingClasses list that cannot be read is a refusal, not an empty list', refused)
+
 for name in failures:
     print('mutation table probe: failed: ' + name, file=sys.stderr)
 print('mutation table probe: %d failed' % len(failures) if failures else 'mutation table probe: every probe passed')

@@ -6,6 +6,7 @@ import (
 	"os"
 	"path/filepath"
 	"slices"
+	"strings"
 	"testing"
 
 	"github.com/Judgment-Pack/judgment-pack-runtime/internal/federation"
@@ -208,6 +209,71 @@ func TestRows(t *testing.T) {
 	for class := range implemented {
 		if _, counted := rowCounts[class]; !counted {
 			t.Errorf("class %q is run without a row count", class)
+		}
+	}
+}
+
+// TestEveryCodeIsRaisedByARow runs, for each code of §12.1, one row whose
+// report holds it, and compares the whole report: the test of each code's
+// row in docs/registry-mutation-table.md. A code of §12.2 is pending (see
+// pendingClasses) and has no case here.
+func TestEveryCodeIsRaisedByARow(t *testing.T) {
+	rows := map[string]row{}
+	for _, r := range readRows(t).Vectors {
+		rows[r.ID] = r
+	}
+	cases := []struct{ code, row string }{
+		{"FED-MANIFEST", "assemble-layer-role"},
+		{"FED-COMMIT", "assemble-commit-abbreviated"},
+		{"FED-REPOSITORY", "assemble-repository-userinfo"},
+		{"FED-SOURCE-MISSING", "assemble-path-missing"},
+		{"FED-ENVIRONMENTS", "assemble-environments-mismatch"},
+		{"FED-ENVIRONMENT-GAP", "assemble-environment-gap"},
+		{"FED-KNOWN-LIMIT", "assemble-known-limit"},
+		{"FED-SOURCE-ASSEMBLED", "assemble-source-assembled-by-index"},
+		{"FED-REGISTRY-DUPLICATE", "assemble-registry-duplicate"},
+		{"FED-KIND-NOT-STANDARD", "assemble-kind-not-standard"},
+		{"FED-KIND-CONFLICT", "assemble-kind-conflict"},
+		{"FED-SCOPE-WIDENS", "assemble-scope-widens"},
+		{"FED-BOUND-FORM", "assemble-bound-form"},
+		{"FED-BOUND-ENVIRONMENT", "assemble-bound-environment"},
+		{"FED-BOUND-KIND", "assemble-bound-kind"},
+		{"FED-BOUND-POINTER-UNREACHABLE", "assemble-bound-pointer-unreachable"},
+		{"FED-BOUND-NOT-COMPARABLE", "assemble-bound-not-comparable"},
+		{"FED-BOUND-OVERLAP", "assemble-bound-overlap"},
+		{"FED-BOUND-WIDENS", "assemble-widens-type"},
+		{"FED-BOUND-ENTRIES", "assemble-entries-per-source"},
+		{"FED-VALUE-BOUND", "assemble-value-bound"},
+		{"FED-INDEX-MISMATCH", "index-check-content-digest"},
+	}
+	covered := map[string]bool{}
+	for _, c := range cases {
+		covered[c.code] = true
+		t.Run(c.code, func(t *testing.T) {
+			r, ok := rows[c.row]
+			if !ok {
+				t.Fatalf("no row %s", c.row)
+			}
+			var expected federation.Report
+			if err := json.Unmarshal(readRowFile(t, r.Expected), &expected); err != nil {
+				t.Fatal(err)
+			}
+			if !slices.ContainsFunc(expected.Diagnostics, func(d federation.Diagnostic) bool { return d.Code == c.code }) {
+				t.Fatalf("row %s does not report %s", c.row, c.code)
+			}
+			switch r.Class {
+			case "assembler":
+				runAssembler(t, r)
+			case "index-checker":
+				runIndexChecker(t, r)
+			default:
+				t.Fatalf("row %s is of class %s", c.row, r.Class)
+			}
+		})
+	}
+	for code := range federation.Codes {
+		if strings.HasPrefix(code, "FED-") != covered[code] {
+			t.Errorf("%s: a code of §12.1 with no case, or a case that is not one", code)
 		}
 	}
 }
