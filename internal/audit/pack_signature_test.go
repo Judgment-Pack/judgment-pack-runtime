@@ -7,6 +7,7 @@ import (
 	"testing"
 
 	"github.com/Judgment-Pack/judgment-pack-runtime/internal/packsig"
+	"github.com/Judgment-Pack/judgment-pack-runtime/internal/regsig"
 )
 
 // A signer's pack signature is the document packsig reads, over the pack's
@@ -36,7 +37,7 @@ func TestEverySignedMessageKindHasItsOwnPrefix(t *testing.T) {
 	if packPrefix != "judgment-pack-runtime/pack-signature/1:" {
 		t.Fatalf("the pack message's prefix is %q", packPrefix)
 	}
-	prefixes := []string{recordSignaturePrefix, keyRotationPrefix, witnessPrefix, packPrefix}
+	prefixes := []string{recordSignaturePrefix, keyRotationPrefix, witnessPrefix, packPrefix, regsig.Lock.Prefix, regsig.Source.Prefix}
 	for i, one := range prefixes {
 		for j, other := range prefixes {
 			if i != j && strings.HasPrefix(one, other) {

@@ -216,7 +216,7 @@ func KeyID(public ed25519.PublicKey) string {
 // signs the pack whose file bytes are pack (ADR-0083): Ed25519 over
 // packsig.Message of their SHA-256, never over the bytes themselves, so the
 // signature is one of a pack and of nothing else. The signer offers no way to
-// sign other bytes than the messages of its three kinds.
+// sign other bytes than the messages of its kinds.
 func (s *Signer) SignPack(pack []byte) []byte {
 	digest := sha256.Sum256(pack)
 	return packsig.Encode(s.public, digest, ed25519.Sign(s.private, packsig.Message(digest)))
