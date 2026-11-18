@@ -112,16 +112,21 @@ func claimSurfaces(t *testing.T) []claimSurface {
 		{args: []string{"registry", "facts", "--help"}},
 		{args: []string{"registry", "check-pack", "--help"}},
 		{args: []string{"registry", "import", "--help"}},
-		// Assembly and the index check of registry format 1.1.0 (proposed)
-		// evaluate nothing; they are inventoried for the phrase scans.
+		// Assembly and the index check of registry format 1.1.0 evaluate
+		// nothing; they are inventoried for the phrase scans.
 		{args: []string{"registry", "assemble", "--help"}},
 		{args: []string{"registry", "check-index", "--help"}},
-		// The lock writer, checker and coverage of format 1.1.0 (proposed)
-		// evaluate nothing; they are inventoried for the phrase scans.
+		// The lock writer, checker and coverage of format 1.1.0, its signing
+		// commands and the lock signature verifier evaluate nothing; they are
+		// inventoried for the phrase scans.
 		{args: []string{"registry", "lock", "--help"}},
 		{args: []string{"registry", "lock", "write", "--help"}},
 		{args: []string{"registry", "lock", "check", "--help"}},
 		{args: []string{"registry", "lock", "coverage", "--help"}},
+		{args: []string{"registry", "lock", "sign", "--help"}},
+		{args: []string{"registry", "lock", "verify", "--help"}},
+		{args: []string{"registry", "source", "--help"}},
+		{args: []string{"registry", "source", "sign", "--help"}},
 		// The emitter host (ADR-0098) runs an emitter and writes or checks
 		// files; it evaluates nothing and is inventoried for the phrase scans.
 		{args: []string{"emit", "--help"}},

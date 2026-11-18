@@ -16,7 +16,8 @@ type codeInfo struct {
 
 // Codes is the closed list of the codes of registry-1.1.0 §12, each an error
 // and active, with its fixed message: the text's meaning, as codes.json gives
-// it. None is raised by a reader of format 1.0.0, and the codes of 1.0.0
+// it, capitalized unless it begins with a signature document's member name,
+// which keeps the schema's case. None is raised by a reader of format 1.0.0, and the codes of 1.0.0
 // (registry.Codes) keep their meanings beside these.
 var Codes = map[string]codeInfo{
 	// §12.1: assembly, the assembled index and bounds.
@@ -68,10 +69,10 @@ var Codes = map[string]codeInfo{
 	"LOCK-SIG-MISSING":         {SeverityError, "The lock signature, or an item's source signature, is not given."},
 	"LOCK-SIG-EXTRA":           {SeverityError, "A second lock signature is given, a source signature that no item expects or that is given twice, or more signature documents than the lock's sources count plus one."},
 	"LOCK-SIG-DOCUMENT":        {SeverityError, "A signature document is over its bound, not one JSON object, repeats a member, holds a backslash or is refused by admission (registry §2.2)."},
-	"LOCK-SIG-VERSION":         {SeverityError, "LockSignatureVersion or sourceSignatureVersion is not \"1.1.0\"."},
+	"LOCK-SIG-VERSION":         {SeverityError, "lockSignatureVersion or sourceSignatureVersion is not \"1.1.0\"."},
 	"LOCK-SIG-MEMBER":          {SeverityError, "A member is unknown or missing."},
-	"LOCK-SIG-ALGORITHM":       {SeverityError, "Algorithm is not ed25519."},
-	"LOCK-SIG-PUBLIC-KEY":      {SeverityError, "PublicKey is not of its form, or not a key a verifier may trust."},
+	"LOCK-SIG-ALGORITHM":       {SeverityError, "algorithm is not ed25519."},
+	"LOCK-SIG-PUBLIC-KEY":      {SeverityError, "publicKey is not of its form, or not a key a verifier may trust."},
 	"LOCK-SIG-FORM":            {SeverityError, "A digest member or signature is not of its form."},
 	"LOCK-SIG-UNEXPECTED-KEY":  {SeverityError, "A document's key is not the key the expected set names for it."},
 	"LOCK-SIG-DIGEST-MISMATCH": {SeverityError, "The lock's bytes, or a source's statement, are not what the document names."},

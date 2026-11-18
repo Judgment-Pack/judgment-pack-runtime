@@ -7,7 +7,7 @@ import (
 )
 
 // SignRegistryLock is the lock signature document (registry format 1.1.0
-// §10.1, proposed), its final line feed included, by which s signs the lock
+// §10.1), its final line feed included, by which s signs the lock
 // whose digest is lockDigest: Ed25519 over regsig.Lock's message, never over
 // the lock's bytes, so the signature is one of a lock and of nothing else. A
 // digest not of its form is regsig.ErrDigest, and nothing is signed.

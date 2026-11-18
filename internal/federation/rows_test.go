@@ -59,7 +59,7 @@ func readRows(t *testing.T) rowManifest {
 	if err := decoder.Decode(&m); err != nil {
 		t.Fatal(err)
 	}
-	if m.Companion != "registry" || m.FormatVersion != "1.1.0" || m.Status != "proposed" {
+	if m.Companion != "registry" || m.FormatVersion != "1.1.0" || m.Status != "released" {
 		t.Fatalf("the rows are for %s %s, %s", m.Companion, m.FormatVersion, m.Status)
 	}
 	return m

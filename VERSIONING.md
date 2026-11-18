@@ -405,6 +405,66 @@ tightened, and a new refusal code, or a refusal of a file that was read before, 
 change; its security and conformance fixes are the line's, a conformance fix citing the
 terraform-file companion's section.
 
+## The registry 1.1.0 reading
+
+The registry 1.1.0 reading (`internal/federation`) is format `1.1.0` of the registry companion:
+`spec/registry.md` together with `spec/registry-1.1.0.md`, two files of one companion, released on
+the scoped tag `registry-v1.1.0` and not yet stable. It assembles one registry from several
+sources, records which commit of each was read, holds a repository to bounds it may only tighten,
+pins a registry in a lock, and verifies the signatures that vouch for a lock and for each
+repository's part of it. Format `1.0.0` and every command that reads it are unchanged by it. This
+promise is the runtime's, to the companion release it names: what follows holds the reading as
+`registry-v1.1.0` states it, whatever a later companion release says. It joins the registry line
+from the release that names it so in its release notes, and from then on, within major version 1
+of the line, these are part of it:
+
+- the commands `jpack registry assemble`, `jpack registry check-index`, `jpack registry lock
+  write`, `jpack registry lock check`, `jpack registry lock coverage`, `jpack registry lock sign`,
+  `jpack registry source sign` and `jpack registry lock verify`, with their flags, their forms and
+  defaults, and their exit codes: 0 when the result is valid (for `lock verify`, when the lock is
+  accepted and recorded), 1 when it is not, 3 for an unusable command line, and 4 when an input
+  could not be read or an output written;
+- the formats they read and write, each under its exact selector, all `"1.1.0"`: the federation
+  manifest (`federationFormatVersion`), the bounds document (`boundsFormatVersion`), the assembled
+  index (`indexFormatVersion`), the lock (`lockFormatVersion`), the lock signature
+  (`lockSignatureVersion`), the source statement and the source signature
+  (`sourceSignatureVersion`), and the report (`reportFormatVersion` `"1.1.0"`). The assembled
+  registry is a format `1.0.0` registry, and a `1.0.0` reader validates and resolves it. A document
+  the runtime writes is RFC 8785 canonical bytes with one final line feed, so a change to its bytes
+  for the same inputs moves its selector;
+- the reading of the 1.1.0 text's §§2 to 12 at that release: its steps and their order, and the
+  53 codes of its §12, `FED-*` and `LOCK-*`, each an error, under their names and conditions;
+- the signing and verification rules: Ed25519 as RFC 8032 states it, an S of the group order or
+  more refused, every key held to the trust rule; the signed messages of the text's §10.3; the
+  signature documents counted in the order given, the lock signature first, and none beyond the
+  count read;
+- the serial record: one record per registry id in the directory `--record-dir` names, its form
+  (`{"digest","formatVersion":"1.0.0","registryId","serial"}`), the compare and set under a lock
+  file, a lock file left behind never removed by the runtime, and a first contact that needs
+  `--floor`;
+- the bounds of the 1.1.0 text and of
+  [`docs/registry-federation.md`](docs/registry-federation.md#bounds).
+
+Not part of it: the wording of messages and of the CLI's own diagnostics for exit 3 and 4; the
+location members beyond the text's §2.1; the readings
+[`docs/registry-federation.md`](docs/registry-federation.md#readings) lists where the text leaves a
+choice open and no row decides it, which a later companion release may settle; the Go package;
+on Windows, the record's permissions, which are not checked, and its directory, which is not
+synced; and memory use and time.
+
+**Later companion releases.** This runtime adopts a later companion release only in a release that
+names it in its release notes. One that adds under a new minor selector is adopted in a minor
+release. One that changes a code, a bound, a step or rule of the reading, or the bytes of a
+document the runtime writes for the same inputs, is a breaking change here: this runtime adopts it
+only in major version 2 of the line, under new selectors. The companion becoming stable, when a
+second, independently written reader agrees on every row of a class (its §15), changes nothing in
+this promise.
+
+The rules of [The registry line](#the-registry-line) apply to it: nothing is removed, no bound is
+tightened, and a new refusal code, or a refusal of an input that was accepted before, is a
+breaking change; its security and conformance fixes are the line's, a conformance fix citing the
+1.1.0 text's section.
+
 ## Release artifacts
 
 An immutable CLI release contains, at minimum:
@@ -454,7 +514,10 @@ The registry line is the registry companion's surface in this repository:
 - the start-up module (see [The start-up module](#the-start-up-module));
 - the terraform-file reading's command, `jpack terraform facts` (see
   [The terraform-file reading](#the-terraform-file-reading)), from the release that names it so in
-  its release notes.
+  its release notes;
+- the registry 1.1.0 reading's commands, `jpack registry assemble`, `check-index`, `lock` and
+  `source` (see [The registry 1.1.0 reading](#the-registry-110-reading)), from the release that
+  names it so in its release notes.
 
 An emitter's own `x-` diagnostic codes are not part of it: they belong to that emitter, are
 neither provisional nor stable under this promise, follow the emitter's own version and release
@@ -467,7 +530,9 @@ contracts it refused, and changes nothing it generates for a contract it accepts
 
 `jpack terraform facts` is part of it as [The terraform-file reading](#the-terraform-file-reading)
 says, from the release that names it so in its release notes; before that release it is
-provisional, and a release may change it, naming the change in its release notes.
+provisional, and a release may change it, naming the change in its release notes. The same
+holds for the registry 1.1.0 reading's commands, as
+[The registry 1.1.0 reading](#the-registry-110-reading) says.
 `FACTS-ID-LIMIT` and `FACTS-DOCUMENT-LIMIT`, which the command also reports, are the registry
 companion's.
 

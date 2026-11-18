@@ -14,7 +14,7 @@ import (
 	"github.com/Judgment-Pack/judgment-pack-runtime/internal/jcs"
 )
 
-// The registry 1.1.0 rows (proposed), vendored with internal/federation.
+// The registry 1.1.0 rows, vendored with internal/federation.
 var federationRows = filepath.Join("..", "federation", "testdata", "1.1.0")
 
 type federationRow struct {

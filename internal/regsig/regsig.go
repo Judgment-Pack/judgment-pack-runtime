@@ -1,5 +1,5 @@
-// Package regsig is the two signature documents of registry format 1.1.0,
-// proposed (§10): the lock signature and the source signature, the message an
+// Package regsig is the two signature documents of registry format 1.1.0
+// (§10): the lock signature and the source signature, the message an
 // Ed25519 key signs for each (§10.3), and the document a signer writes. It
 // reaches no file, environment or network. The private half of a key never
 // comes here: internal/audit's Signer signs the message, and
@@ -27,8 +27,8 @@
 // publicKey, signature, sourceDigest, sourceSignatureVersion. Hexadecimal is
 // lowercase.
 //
-// The format is proposed: what this package writes may change before the
-// text is released.
+// The format is released on the spec tag registry-v1.1.0 and not yet
+// stable; VERSIONING.md says what is promised.
 package regsig
 
 import (
