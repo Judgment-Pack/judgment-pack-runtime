@@ -31,8 +31,10 @@ jpack registry check-index --index index.json --federation federation.json \
   bytes are read at, and a local directory that holds them at that commit. Nothing is fetched,
   and the runtime does not check that the directory is that commit: whoever runs the command
   vouches for it.
-- Each path the manifest names is read under its source's directory. A symbolic link, or a path
-  that leaves the directory, is a read error; a file that is absent is not given, which the
+- Each path the manifest names is read under its source's directory. A symbolic link or junction
+  in any component of the path (even one that stays inside the directory), a component whose
+  name on disk is spelled otherwise (as a case-insensitive filesystem would resolve it), or a
+  path that leaves the directory, is a read error; a file that is absent is not given, which the
   assembly reports as `FED-SOURCE-MISSING`.
 - The known list (the assembled indexes and locks a source's registry must not be one of) has
   no default: give `--known-index FILE` and `--known-lock FILE` for each, or `--no-known` to state

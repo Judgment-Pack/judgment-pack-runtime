@@ -151,8 +151,9 @@ func (a *App) federationDocument(name, path string, limit int, what string) (reg
 }
 
 // federationInput reads the inputs of an assembly. Each source's paths are
-// read under its directory, contained in it: a path that leaves it, or a
-// symbolic link, is a read error, and a path that is absent is not given.
+// read under its directory, contained in it: a path that leaves it, a link
+// in any of its components, or a component spelled otherwise on disk, is a
+// read error, and a path that is absent is not given.
 func (a *App) federationInput(name string, inputs *federationInputs, index string) (federation.Input, error) {
 	usage := func(message string) (federation.Input, error) {
 		return federation.Input{}, a.operational(name, "json", result.ExitInvocation, "JPS-INVOCATION-INPUT", message)
@@ -251,10 +252,11 @@ func (a *App) federationInput(name string, inputs *federationInputs, index strin
 	return in, nil
 }
 
-// readContained reads one path of a source under its directory. An absent
-// file is not given.
+// readContained reads one path of a source under its directory. A link or
+// junction in any component, or a component not spelled as on disk, is a
+// read error; an absent file is not given.
 func readContained(root *fssecure.Root, p federation.Path) (registry.Document, bool, error) {
-	file, err := root.Open(p.Path)
+	file, err := root.OpenExact(p.Path)
 	if errors.Is(err, fs.ErrNotExist) {
 		return registry.Document{}, false, nil
 	}

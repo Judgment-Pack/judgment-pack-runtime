@@ -321,6 +321,40 @@ func TestRegistryAssembleReadsInsideEachSource(t *testing.T) {
 	})
 }
 
+// TestRegistryAssembleRefusesALinkedComponent refuses a source path whose
+// directory component is a link, even one that stays inside the source's
+// directory: the manifest names files, not aliases of them.
+func TestRegistryAssembleRefusesALinkedComponent(t *testing.T) {
+	r := federationRowsOf(t, "assembler")[0]
+	args := federationArguments(t, r)
+	dir, path := "", ""
+	for i, arg := range args {
+		if arg != "--source" {
+			continue
+		}
+		parts := strings.SplitN(args[i+1], "=", 3)
+		for p := range r.Sources[parts[0]].Files {
+			if strings.Contains(p, "/") {
+				dir, path = parts[2], p
+			}
+		}
+	}
+	if path == "" {
+		t.Fatal("the row has no source file below a directory")
+	}
+	component := filepath.Join(dir, filepath.FromSlash(strings.SplitN(path, "/", 2)[0]))
+	if err := os.Rename(component, component+"-real"); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Symlink(filepath.Base(component)+"-real", component); err != nil {
+		t.Skipf("no symbolic links here: %v", err)
+	}
+	code, stdout, _ := runTest(t, append([]string{"registry", "assemble"}, args...), "")
+	if code != 4 || strings.Contains(stdout, `"valid"`) {
+		t.Fatalf("exit=%d, want 4 and no report; stdout=%q", code, stdout)
+	}
+}
+
 // firstSourceFile names one file a row lays out: its source's directory
 // and its path there.
 func firstSourceFile(t *testing.T, r federationRow, args []string) (string, string) {

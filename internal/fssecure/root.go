@@ -258,6 +258,12 @@ func (r *Root) Open(relative string) (*os.File, error) {
 // own information is returned so a caller that has more to ask of it does not
 // stat it a second time.
 func (r *Root) sameRegularFile(file *os.File, cleaned string) (os.FileInfo, error) {
+	return sameRegularFileIn(r.root, file, cleaned)
+}
+
+// sameRegularFileIn is sameRegularFile against any directory handle: the one
+// the open used.
+func sameRegularFileIn(root *os.Root, file *os.File, cleaned string) (os.FileInfo, error) {
 	openedInfo, err := file.Stat()
 	if err != nil {
 		return nil, err
@@ -265,7 +271,7 @@ func (r *Root) sameRegularFile(file *os.File, cleaned string) (os.FileInfo, erro
 	if !openedInfo.Mode().IsRegular() {
 		return nil, errors.New("path is not a regular file")
 	}
-	linkInfo, err := r.root.Lstat(cleaned)
+	linkInfo, err := root.Lstat(cleaned)
 	if err != nil || LinkLike(linkInfo) || !os.SameFile(openedInfo, linkInfo) {
 		return nil, errors.New("path changed or resolves through a final link or junction")
 	}
