@@ -113,6 +113,33 @@ func scanOwned(root string, owns []Glob) (map[string]diskFile, []Diagnostic) {
 	return files, diagnostics
 }
 
+// OwnedFile is a regular file on disk that a manifest's owns matches: its
+// slash path under the root, and its mode as a response gives one.
+type OwnedFile struct {
+	Path string
+	Mode string
+}
+
+// ScanOwned lists the regular files under root that owns matches, sorted by
+// path, as check mode scans them: never through a link, and passing over
+// anything a file system reads as ".git". Its diagnostics are those that
+// refuse a run (EMIT-LINK, EMIT-PATH-UNREADABLE). A registry 1.1.0 lock
+// writer and checker read an emitter's owned files with it.
+func ScanOwned(root string, owns []Glob) ([]OwnedFile, []Diagnostic) {
+	files, diagnostics := scanOwned(root, owns)
+	out := make([]OwnedFile, 0, len(files))
+	for _, f := range files {
+		out = append(out, OwnedFile{Path: f.path, Mode: f.mode})
+	}
+	slices.SortFunc(out, func(a, b OwnedFile) int { return strings.Compare(a.Path, b.Path) })
+	return out, diagnostics
+}
+
+// ModesRecorded reports whether this file system records an executable
+// bit. Where it does not (Windows), a mode read from disk is not the mode
+// git records, so no lock can be written or checked from it.
+func ModesRecorded() bool { return modesRecorded }
+
 // modeOf reads a file's mode as one of the two a response gives: executable
 // when the owner may execute it, as git records a file's mode. The other
 // permission bits follow the umask of whoever checked the file out, so they
