@@ -14,15 +14,9 @@ import (
 	"github.com/Judgment-Pack/judgment-pack-runtime/internal/registry"
 )
 
-// pendingClasses are the conformance classes of §15 this package does not
-// build yet. The list shrinks as each is built, and is empty once the last
-// is: TestRows fails when a listed class is run, and when a class of the
-// rows is neither listed nor run. scripts/check-mutation-table.py reads it
-// too: a code it lists as pending is allowed only while a class is.
-var pendingClasses = []string{"lock-signature-verifier"}
-
-// rowCounts are how many rows each class run here has.
-var rowCounts = map[string]int{"assembler": 47, "index-checker": 5, "lock-writer": 11, "lock-checker": 34}
+// rowCounts are how many rows each class of §15 has: every class is run
+// here.
+var rowCounts = map[string]int{"assembler": 47, "index-checker": 5, "lock-writer": 11, "lock-checker": 36, "lock-signature-verifier": 63}
 
 type rowSource struct {
 	Commit string            `json:"commit"`
@@ -42,6 +36,7 @@ type row struct {
 	Index    string `json:"index"`
 	Expected string `json:"expected"`
 	lockRow
+	verifyRow
 	Writes *struct {
 		Registry string `json:"registry"`
 		Index    string `json:"index"`
@@ -172,37 +167,25 @@ func runIndexChecker(t *testing.T, r row) {
 	compareReport(t, r, report)
 }
 
-// TestRows runs every row of each class this package builds, and holds the
-// list of those it does not build yet.
+// TestRows runs every row of every class.
 func TestRows(t *testing.T) {
 	implemented := map[string]func(*testing.T, row){
-		"assembler":     runAssembler,
-		"index-checker": runIndexChecker,
-		"lock-writer":   runLockWriter,
-		"lock-checker":  runLockChecker,
+		"assembler":               runAssembler,
+		"index-checker":           runIndexChecker,
+		"lock-writer":             runLockWriter,
+		"lock-checker":            runLockChecker,
+		"lock-signature-verifier": runVerifier,
 	}
 	m := readRows(t)
 	run := map[string]int{}
-	present := map[string]bool{}
 	for _, r := range m.Vectors {
-		present[r.Class] = true
 		check, built := implemented[r.Class]
-		switch {
-		case built:
-			run[r.Class]++
-			t.Run(r.ID, func(t *testing.T) { check(t, r) })
-		case slices.Contains(pendingClasses, r.Class):
-		default:
-			t.Errorf("%s: class %q is neither run nor listed as pending", r.ID, r.Class)
+		if !built {
+			t.Errorf("%s: class %q is not run", r.ID, r.Class)
+			continue
 		}
-	}
-	for _, class := range pendingClasses {
-		if _, built := implemented[class]; built {
-			t.Errorf("class %q is built and still listed as pending", class)
-		}
-		if !present[class] {
-			t.Errorf("pending class %q has no rows", class)
-		}
+		run[r.Class]++
+		t.Run(r.ID, func(t *testing.T) { check(t, r) })
 	}
 	for class, want := range rowCounts {
 		if run[class] != want {
@@ -223,8 +206,7 @@ func TestRows(t *testing.T) {
 // raises is an edit of write-assembled's inputs, refused with that code
 // alone (§8: a source whose signature does not verify is refused with that
 // signature's code). No key signs anything here: each edit breaks a document
-// the rows signed, or the signer set. A pending code (pendingCodes) has no
-// case.
+// the rows signed, or the signer set. Every code has a case.
 func TestEveryCodeIsRaisedByARow(t *testing.T) {
 	rows := map[string]row{}
 	for _, r := range readRows(t).Vectors {
@@ -273,6 +255,9 @@ func TestEveryCodeIsRaisedByARow(t *testing.T) {
 		{"LOCK-EMITTER-MISSING", "check-emitters-missing", nil},
 		{"LOCK-EMITTER-MISMATCH", "check-emitter-file-differs", nil},
 		{"LOCK-NOT-COVERED", "coverage-wrong-environment", nil},
+		{"LOCK-SERIAL-ROLLBACK", "verify-rollback", nil},
+		{"LOCK-SERIAL-CONFLICT", "verify-serial-conflict", nil},
+		{"LOCK-SERIAL-STATE", "verify-record-unreadable", nil},
 		{"LOCK-SIG-UNEXPECTED-KEY", "write-source-signature-wrong-key", nil},
 		{"LOCK-SIG-EXPECTED-KEY", "write-assembled", func(t testing.TB, in *federation.WriteInput) {
 			in.Signers.Key = ""
@@ -345,14 +330,16 @@ func TestEveryCodeIsRaisedByARow(t *testing.T) {
 				runLockWriter(t, r)
 			case "lock-checker":
 				runLockChecker(t, r)
+			case "lock-signature-verifier":
+				runVerifier(t, r)
 			default:
 				t.Fatalf("row %s is of class %s", c.row, r.Class)
 			}
 		})
 	}
 	for code := range federation.Codes {
-		if !slices.Contains(pendingCodes, code) != covered[code] {
-			t.Errorf("%s: a code with no case that is not pending, or a pending code with one", code)
+		if !covered[code] {
+			t.Errorf("%s: a code with no case", code)
 		}
 	}
 }

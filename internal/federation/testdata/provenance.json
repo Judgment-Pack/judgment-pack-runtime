@@ -4,9 +4,10 @@
   "pullRequest": [
     "https://github.com/Judgment-Pack/judgment-pack-spec/pull/383",
     "https://github.com/Judgment-Pack/judgment-pack-spec/pull/384",
-    "https://github.com/Judgment-Pack/judgment-pack-spec/pull/386"
+    "https://github.com/Judgment-Pack/judgment-pack-spec/pull/386",
+    "https://github.com/Judgment-Pack/judgment-pack-spec/pull/387"
   ],
-  "revision": "e0d5a986fc6e24e34bcc26631f2af6aa6b1b7515",
+  "revision": "7bc0874c719985f6909b3bc606e238773f4aeacd",
   "files": {
     "1.1.0/README.md": {
       "upstream": "conformance/registry/1.1.0/README.md",
@@ -70,7 +71,7 @@
     },
     "1.1.0/codes.json": {
       "upstream": "conformance/registry/1.1.0/codes.json",
-      "sha256": "a0ed24debe7bb37dc3e93696c34edfa044dd27ab5c40e888d5116246c4106d40"
+      "sha256": "e01296f2174ded487b4880f461aa61f13e3547c39930cd73898f188cb26836ae"
     },
     "1.1.0/emitters/db-roles.json": {
       "upstream": "conformance/registry/1.1.0/emitters/db-roles.json",
@@ -222,7 +223,7 @@
     },
     "1.1.0/manifest.json": {
       "upstream": "conformance/registry/1.1.0/manifest.json",
-      "sha256": "bace3529887ff12a590b8a06ef51a4cbe2473ec8928a588368fd20db10c0841d"
+      "sha256": "23144e5ba594e0ff48cd256275579664fac9b95aca5d63a6d0c1a46b276f02b7"
     },
     "1.1.0/schema/assembled-index.schema.json": {
       "upstream": "schema/registry/1.1.0/assembled-index.schema.json",
@@ -2768,9 +2769,21 @@
       "upstream": "conformance/registry/1.1.0/vectors/check-emitter-unlisted-file/report.json",
       "sha256": "bd8516f15e612d897df72796e927e763dfd0b78f33c0e5112e66c78c4bf5646d"
     },
+    "1.1.0/vectors/check-emitter-unlisted-manifest/emitter.json": {
+      "upstream": "conformance/registry/1.1.0/vectors/check-emitter-unlisted-manifest/emitter.json",
+      "sha256": "0d03ef3a453cf661cc440ee3ea50a80e1e12fcfdd9ccc6a569e9a1942b1b4bc4"
+    },
+    "1.1.0/vectors/check-emitter-unlisted-manifest/report.json": {
+      "upstream": "conformance/registry/1.1.0/vectors/check-emitter-unlisted-manifest/report.json",
+      "sha256": "dcf3ecbdda7c4f1e3e3f28ba032f8428ea04651fec9b1d25c35fc7b1e46d88d4"
+    },
     "1.1.0/vectors/check-emitters-missing/report.json": {
       "upstream": "conformance/registry/1.1.0/vectors/check-emitters-missing/report.json",
       "sha256": "7cfffffcacc11893e2b6dffd07b2531106a01930a226497eb497a2c413dc0118"
+    },
+    "1.1.0/vectors/check-emitters-unlocked/report.json": {
+      "upstream": "conformance/registry/1.1.0/vectors/check-emitters-unlocked/report.json",
+      "sha256": "dcf3ecbdda7c4f1e3e3f28ba032f8428ea04651fec9b1d25c35fc7b1e46d88d4"
     },
     "1.1.0/vectors/check-emitters/report.json": {
       "upstream": "conformance/registry/1.1.0/vectors/check-emitters/report.json",
@@ -3163,6 +3176,14 @@
     "1.1.0/vectors/verify-signature-form/report.json": {
       "upstream": "conformance/registry/1.1.0/vectors/verify-signature-form/report.json",
       "sha256": "e4790668f4eccb5007117c2c0474ec37a05382d394fd72a3809afbc10b37e7c7"
+    },
+    "1.1.0/vectors/verify-signature-integer-range/lock.sig.json": {
+      "upstream": "conformance/registry/1.1.0/vectors/verify-signature-integer-range/lock.sig.json",
+      "sha256": "5f31b8527b577d83f622f75ebd8e4e95f8df521037fdf9021ab1b7947717eaf4"
+    },
+    "1.1.0/vectors/verify-signature-integer-range/report.json": {
+      "upstream": "conformance/registry/1.1.0/vectors/verify-signature-integer-range/report.json",
+      "sha256": "e81a76c13aafbe5d382cfbe2d2bb8c8d06bbcb18e45fc562b390f1d0da63d49c"
     },
     "1.1.0/vectors/verify-signature-key-small-order/lock.sig.json": {
       "upstream": "conformance/registry/1.1.0/vectors/verify-signature-key-small-order/lock.sig.json",

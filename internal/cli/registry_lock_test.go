@@ -277,8 +277,8 @@ func lockCheckArguments(t *testing.T, r lockCLIRow) []string {
 // code.
 func TestRegistryLockCheckRows(t *testing.T) {
 	rows := lockRowsOf(t, "lock-checker")
-	if len(rows) != 34 {
-		t.Fatalf("%d lock-checker rows, want 34", len(rows))
+	if len(rows) != 36 {
+		t.Fatalf("%d lock-checker rows, want 36", len(rows))
 	}
 	for _, r := range rows {
 		t.Run(r.ID, func(t *testing.T) {

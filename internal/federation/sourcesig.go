@@ -18,7 +18,7 @@ import (
 // names for the source and the digest of the statement rebuilt from the
 // index's item (§11, Checking a document). This is that part of §11 and no
 // more: the lock signature, the serial record and verification are the lock
-// signature verifier's (§15), which this package does not build yet.
+// signature verifier's (§15, verify.go).
 
 // MaxSignatureBytes is a signature document's bound (§2).
 const MaxSignatureBytes = 4096

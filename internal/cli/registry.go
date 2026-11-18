@@ -24,7 +24,7 @@ func (a *App) registryCommand() *cobra.Command {
 			return command.Help()
 		},
 	}
-	command.AddCommand(a.registryImportCommand(), a.registryValidateCommand(), a.registryResolveCommand(), a.registryFactsCommand(), a.registryCheckPackCommand(), a.registryAssembleCommand(), a.registryCheckIndexCommand(), a.registryLockCommand())
+	command.AddCommand(a.registryImportCommand(), a.registryValidateCommand(), a.registryResolveCommand(), a.registryFactsCommand(), a.registryCheckPackCommand(), a.registryAssembleCommand(), a.registryCheckIndexCommand(), a.registryLockCommand(), a.registrySourceCommand())
 	return command
 }
 

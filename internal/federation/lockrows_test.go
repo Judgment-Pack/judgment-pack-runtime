@@ -13,11 +13,6 @@ import (
 	"github.com/Judgment-Pack/judgment-pack-runtime/internal/registry"
 )
 
-// pendingCodes are the codes of §12.2 that only the lock signature verifier
-// (§11), which is not built yet, raises; codes.go lists them under its
-// pending heading, which scripts/check-mutation-table.py reads.
-var pendingCodes = []string{"LOCK-SERIAL-ROLLBACK", "LOCK-SERIAL-CONFLICT", "LOCK-SERIAL-STATE"}
-
 // lockRow is a lock row's members beyond those of an assembly (the rows'
 // README, Operations).
 type lockRow struct {
