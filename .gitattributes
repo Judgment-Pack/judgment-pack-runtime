@@ -31,7 +31,7 @@ internal/terraformfile/testdata/** -text
 internal/terraformfile/testdata/1.0.0/vectors/json/trailing-whitespace.json -whitespace
 internal/terraformfile/testdata/1.0.0/vectors/json/white-space-only.json -whitespace
 
-# The registry 1.1.0 rows and schemas (proposed) have exact upstream checksums,
+# The registry 1.1.0 rows and schemas have exact upstream checksums,
 # and a kind declaration's digest is that of its bytes as supplied.
 internal/federation/testdata/** -text
 
