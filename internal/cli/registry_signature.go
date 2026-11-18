@@ -41,7 +41,7 @@ func (a *App) registrySigner(name, keyPath, publicKeyPath string) (*audit.Signer
 	if keyPath == "" || publicKeyPath == "" {
 		return usage("Supply --key, the seed file to sign with, and --public-key, the file holding its public key.")
 	}
-	if keyPath == "-" || publicKeyPath == "-" || strings.Contains(keyPath, "://") || fssecure.IsRemotePath(keyPath) {
+	if keyPath == "-" || publicKeyPath == "-" || !localInput(keyPath) || !localInput(publicKeyPath) {
 		return usage("Read --key and --public-key from local files.")
 	}
 	data, err := a.readInput(publicKeyPath, 4096, "public key")
@@ -84,8 +84,13 @@ func (a *App) writeSignature(name, target string, document []byte, keyID, member
 	return nil
 }
 
+// localInput is a path that names no URL and no remote share.
+func localInput(path string) bool {
+	return !strings.Contains(path, "://") && !fssecure.IsRemotePath(path)
+}
+
 func localOutput(path string) bool {
-	return path != "-" && !strings.Contains(path, "://") && !fssecure.IsRemotePath(path)
+	return path != "-" && localInput(path)
 }
 
 func (a *App) registryLockSignCommand() *cobra.Command {
