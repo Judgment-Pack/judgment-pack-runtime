@@ -30,7 +30,7 @@ func TestAPlanReadsAsItsCanonicalAcquiredValue(t *testing.T) {
 		t.Fatalf("acquired value\n got %s\nwant %s", got, want)
 	}
 	sum := sha256.Sum256(data)
-	wantRecord := `{"bytes":` + strconv.Itoa(len(data)) + `,"document":"plan","formatTable":"proposed-1","formatVersion":"1.2","kind":"terraform-file","removedSensitive":2,"selected":2,"sha256":"` + hex.EncodeToString(sum[:]) + `"}`
+	wantRecord := `{"bytes":` + strconv.Itoa(len(data)) + `,"document":"plan","formatTable":"1.0.0","formatVersion":"1.2","kind":"terraform-file","removedSensitive":2,"selected":2,"sha256":"` + hex.EncodeToString(sum[:]) + `"}`
 	if got := string(acquisition.Record()); got != wantRecord {
 		t.Fatalf("record\n got %s\nwant %s", got, wantRecord)
 	}

@@ -372,3 +372,44 @@ absent, so a rule that reads it meets `unknown`.
 
 **Not built:** the kind in `jpack dialect validate`, which waits on the dialect version the kind
 joins (RFC 0038, Unresolved question 1).
+
+## Amendment: the format table is release `1.0.0`, and the companion's vectors (2026-11-17)
+
+The reading now has a companion of its own, `spec/terraform-file.md` (reading `1.0.0`, proposed,
+whose first release is to be the scoped tag `terraform-file-v1.0.0`); dialect §4.5 cites it for the
+file's reading. Its §4 takes the table this decision held under the provisional name in reading 1
+as its first, with the same rows (plan `1.0`, `1.1` and `1.2`; state `1.0`), and gives it the
+release `1.0.0`; its §7 has the acquisition record's `formatTable` carry that release. So
+`FormatTable` is now `"1.0.0"`, and reading 1 is superseded. Nothing else in the reader changes: a
+file it accepted is accepted with the same value and the same record but for `formatTable`, and a
+file it refused is refused with the same code. A newly accepted row is a patch release of the table
+(§4), which `formatTable` names.
+
+The companion's §9 names the eight `TF-*` codes above, with their steps, and its §8 the batch
+`jpack terraform facts` writes, `FACTS-ID-LIMIT` included. The codes, the table and the batch lines
+stay provisional until a spec release carries the companion (VERSIONING.md).
+
+**The companion's vectors.** `conformance/terraform-file/1.0.0/` holds the machine-readable code
+list and table and 188 hand-written vectors, proposed with the text. They are vendored unmodified
+under `internal/terraformfile/testdata`, with the Spec's license, and pinned by revision and by
+each file's SHA-256 in `provenance.json`, as `internal/vocabulary/testdata` pins the
+annotation-vocabulary rows; a test holds every vendored file to its digest, and the reader's table
+and codes to `formats.json` and `codes.json`. The inputs of the three vectors not committed, a
+file of about 1 MiB and files of the default `maxBytes` and one byte more, are built in the tests
+by the manifest's `generate` rule.
+
+- `TestSpecVectors` (`internal/terraformfile`) runs the 144 `read` and `read-stream` rows through
+  `Read` and `ReadStream`: 70 accepted, each with its exact record and acquired value, and 74
+  refused, each with its code and the input's sha256 and size, or, for the stream, with neither.
+- `TestTerraformFactsSpecVectors` (`internal/cli`) runs the 8 `batch` rows through `jpack
+  terraform facts`, with the flags each declaration stands for: the exact bytes of the lines, or
+  the refusal on standard error and no line.
+- A declaration not of §2's form reads no file, and this runtime reads no declaration document: it
+  takes a source's members as options. Of the 36 such rows, the 20 a command line can write are
+  run through the same flags, each an unusable command line (exit 3) that does not read the file.
+  The other 16 are not run: a declaration that is not an object, a member §2 or §5 does not have,
+  a document other than `plan` and `state`, or a member of another JSON type, none of which a
+  flag's text can write.
+
+Every row run gives its one expected result. The vectors are proposed and back no claim, so
+CONFORMANCE.md is unchanged.

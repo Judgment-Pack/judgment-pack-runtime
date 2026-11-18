@@ -58,10 +58,11 @@ const (
 )
 
 // FormatTable is the release of the accepted format_version table this reader
-// implements. The dialect text's §4.5 (spec/dialect.md, proposed) takes this
-// table as its first and leaves its release number open; "proposed-1" is this
-// runtime's provisional name for it, recorded in ADR-0097.
-const FormatTable = "proposed-1"
+// implements, which the acquisition record carries as formatTable. The
+// terraform-file companion (spec/terraform-file.md §4 and §7, reading 1.0.0,
+// proposed) gives its first table the release 1.0.0 (ADR-0097's amendment of
+// 2026-11-17).
+const FormatTable = "1.0.0"
 
 // acceptedFormats is the table FormatTable names, per document. A version not
 // listed, a newer minor of a listed major included, is TF-FORMAT.
@@ -76,9 +77,9 @@ func AcceptedFormats(document string) []string {
 	return append([]string(nil), acceptedFormats[document]...)
 }
 
-// The refusal codes. The dialect text's §4.5 (spec/dialect.md, proposed)
-// names every one; RFC 0038 named all but CodeValueLimit (ADR-0097). All are
-// provisional until the dialect companion releases the kind (VERSIONING.md).
+// The refusal codes. The terraform-file companion's §9 (spec/terraform-file.md,
+// proposed) names every one; RFC 0038 named all but CodeValueLimit (ADR-0097).
+// All are provisional until a spec release carries the reading (VERSIONING.md).
 const (
 	CodeSize        = "TF-SIZE"
 	CodeJSON        = "TF-JSON"
