@@ -1,8 +1,9 @@
 # Pinned terraform-file vectors
 
 `provenance.json` records exact files from Judgment-Pack/judgment-pack-spec at revision
-`8354daaeed00f7887c494a1aa4d37f9e6a7a489e`, the commit that merges the pull request that adds them
-([spec #373](https://github.com/Judgment-Pack/judgment-pack-spec/pull/373)): their original paths
+`48fc63539b619f91a64fdcb60fc18a8afeeb01a4`, the commit that merges the pull request that last changed them
+([spec #376](https://github.com/Judgment-Pack/judgment-pack-spec/pull/376), after
+[spec #373](https://github.com/Judgment-Pack/judgment-pack-spec/pull/373) added them): their original paths
 and SHA-256 checksums. No release carries them yet, so `release` is `null`; the pin moves to the
 `terraform-file-v1.0.0` tag once it is published. `LICENSE` is
 that repository's license. The files are retained for this package's tests and `internal/cli`'s,
@@ -11,7 +12,7 @@ holds them to `1.0.0/formats.json` and `1.0.0/codes.json`.
 
 `1.0.0/` is `conformance/terraform-file/1.0.0/` unmodified: `codes.json`, the code list of the
 companion's §9; `formats.json`, the accepted table of its §4, release `1.0.0`; `manifest.json`,
-its 188 vectors; `declarations/`, the declarations they name; and `vectors/`, their inputs and
+its 206 vectors; `declarations/`, the declarations they name; and `vectors/`, their inputs and
 expected results. The Spec proposes them with the companion text (`spec/terraform-file.md`,
 reading `1.0.0`, proposed): until a terraform-file tag releases them they are not a conformance
 corpus, are in no bundle, and back no claim.

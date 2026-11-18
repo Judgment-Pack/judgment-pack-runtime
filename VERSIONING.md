@@ -395,6 +395,13 @@ table release it implements: a file of that version, which was `TF-FORMAT`, is t
 file of a version already accepted gives the same lines. No row is removed within major version 1.
 A version the table does not list stays `TF-FORMAT`, a newer minor of a listed major included.
 
+**An erratum release.** The companion may also bump the table's patch release with no new row, to
+correct its text or a vector. Such a release needs no runtime release when it changes nothing this
+runtime does: a later runtime release pins the vectors at it and names it in its release notes. One
+that changes what this runtime does for a file it reads, a code, a bound, or the bytes of a batch
+line or a diagnostic, is a breaking change here, as [Later companion
+releases](#the-terraform-file-reading) says: it waits for major version 2 of the line.
+
 The rules of [The registry line](#the-registry-line) apply to it: nothing is removed, no bound is
 tightened, and a new refusal code, or a refusal of a file that was read before, is a breaking
 change; its security and conformance fixes are the line's, a conformance fix citing the
