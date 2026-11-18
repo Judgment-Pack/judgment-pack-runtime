@@ -10,14 +10,15 @@ import (
 	"testing"
 )
 
-// The rows of registry format 1.1.0, proposed, copied byte for byte from the
-// Spec revision testdata/provenance.json names. No release tag names them
-// yet. The rows' second reader, the rows and this reader are by the same
-// vendor: agreement on them is not a cross-vendor claim.
+// The rows of registry format 1.1.0, released on registry-v1.1.0, copied
+// byte for byte from the Spec revision testdata/provenance.json names, the
+// commit the registry-v1.1.0 tag names. The rows' second reader, the rows and
+// this reader are by the same vendor: agreement on them is not a cross-vendor
+// claim.
 const (
 	rowsDir      = "testdata/1.1.0"
-	rowsRevision = "7bc0874c719985f6909b3bc606e238773f4aeacd"
-	rowsRelease  = "proposed (not tagged)"
+	rowsRevision = "5f95fe86f2e664d116c6b59546d86cf1a063623a"
+	rowsRelease  = "registry-v1.1.0"
 )
 
 func TestVendoredRowsKeepTheirUpstreamDigests(t *testing.T) {
@@ -43,6 +44,7 @@ func TestVendoredRowsKeepTheirUpstreamDigests(t *testing.T) {
 		"https://github.com/Judgment-Pack/judgment-pack-spec/pull/384",
 		"https://github.com/Judgment-Pack/judgment-pack-spec/pull/386",
 		"https://github.com/Judgment-Pack/judgment-pack-spec/pull/387",
+		"https://github.com/Judgment-Pack/judgment-pack-spec/pull/389",
 	}
 	if pin.Repository != "https://github.com/Judgment-Pack/judgment-pack-spec" || pin.Release != rowsRelease || pin.Revision != rowsRevision || !slices.Equal(pin.PullRequest, pulls) {
 		t.Fatalf("the rows are pinned to %s at %q, %s, %v", pin.Repository, pin.Release, pin.Revision, pin.PullRequest)

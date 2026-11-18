@@ -175,7 +175,7 @@ func lockWriteArguments(t *testing.T, r lockCLIRow) []string {
 		for i, file := range r.SourceSignatures {
 			args = append(args, "--source-signature", manifest.Sources[i].Name+"="+federationPath(t, file))
 		}
-		args = append(args, "--key", r.Signers.Key)
+		args = append(args, "--standard-public-key", r.Signers.Key)
 		for identity, key := range r.Signers.Repositories {
 			args = append(args, "--repository-key", identity+"="+key)
 		}
@@ -329,7 +329,10 @@ func TestRegistryLockInvocation(t *testing.T) {
 		{"registry and federation", append(writeAssembled, "--registry", federationPath(t, single.Registry)), 3},
 		{"neither registry nor federation", without(write, "--registry"), 3},
 		{"kinds for an assembly", append(writeAssembled, "--kind", federationPath(t, "kinds/database.json")), 3},
-		{"signers for a single registry", append(write, "--key", assembled.Signers.Key), 3},
+		{"signers for a single registry", append(write, "--standard-public-key", assembled.Signers.Key), 3},
+		// The standard owner's key is a public key named as one: --key,
+		// which names a seed file to the signing commands, is no flag here.
+		{"standard key as --key", append(without(writeAssembled, "--standard-public-key"), "--key", assembled.Signers.Key), 3},
 		{"source signature form", append(writeAssembled, "--source-signature", "billing"), 3},
 		{"source signature twice", append(writeAssembled, "--source-signature", "billing="+federationPath(t, "signatures/billing.json")), 3},
 		{"repository key form", append(writeAssembled, "--repository-key", "nokey"), 3},
@@ -516,7 +519,7 @@ func TestRegistryLockStandardOnly(t *testing.T) {
 	if err := os.WriteFile(signaturePath, signStandardStatement(t, indexPath), 0o600); err != nil {
 		t.Fatal(err)
 	}
-	write := append([]string{"registry", "lock", "write", "--first-serial", "1", "--out", lockPath, "--key", r.Signers.Key,
+	write := append([]string{"registry", "lock", "write", "--first-serial", "1", "--out", lockPath, "--standard-public-key", r.Signers.Key,
 		"--source-signature", "standard=" + signaturePath}, sources...)
 	if code, stdout, stderr := runTest(t, write, ""); code != 0 || stdout != "" {
 		t.Fatalf("write: exit %d, stdout %q, stderr %q", code, stdout, stderr)

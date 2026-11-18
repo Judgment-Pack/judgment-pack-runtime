@@ -7,11 +7,14 @@ import (
 	"testing"
 	"unicode"
 	"unicode/utf8"
+
+	"github.com/Judgment-Pack/judgment-pack-runtime/internal/regsig"
 )
 
 // Codes is written in the reader; it must be the Spec's codes.json, which the
 // reader never reads: every code, its severity, and its meaning as the
-// message, capitalized and ending with a period.
+// message, capitalized and ending with a period. A meaning that begins with a
+// signature document's member name keeps that name in the schema's case.
 func TestCodesAreTheSpecList(t *testing.T) {
 	var list struct {
 		Companion     string `json:"companion"`
@@ -32,8 +35,14 @@ func TestCodesAreTheSpecList(t *testing.T) {
 	if err := json.Unmarshal(raw, &list); err != nil {
 		t.Fatal(err)
 	}
-	if list.Companion != "registry" || list.FormatVersion != "1.1.0" || list.Status != "proposed" {
+	if list.Companion != "registry" || list.FormatVersion != "1.1.0" || list.Status != "released" {
 		t.Fatalf("codes.json is for %s %s, %s", list.Companion, list.FormatVersion, list.Status)
+	}
+	members := map[string]bool{}
+	for _, kind := range []regsig.Kind{regsig.Lock, regsig.Source} {
+		for _, member := range kind.Members() {
+			members[member] = true
+		}
 	}
 	federation, lock := 0, 0
 	for _, code := range list.Codes {
@@ -45,8 +54,12 @@ func TestCodesAreTheSpecList(t *testing.T) {
 		if code.Severity != "error" || code.Status != "active" || info.severity != SeverityError {
 			t.Errorf("%s is %s and %s in codes.json, %s in Codes", code.Code, code.Severity, code.Status, info.severity)
 		}
-		first, size := utf8.DecodeRuneInString(code.Meaning)
-		if want := string(unicode.ToUpper(first)) + code.Meaning[size:] + "."; info.message != want {
+		want := code.Meaning + "."
+		if word, _, _ := strings.Cut(code.Meaning, " "); !members[word] {
+			first, size := utf8.DecodeRuneInString(code.Meaning)
+			want = string(unicode.ToUpper(first)) + code.Meaning[size:] + "."
+		}
+		if info.message != want {
 			t.Errorf("%s: the message is %q; codes.json's meaning gives %q", code.Code, info.message, want)
 		}
 		switch {

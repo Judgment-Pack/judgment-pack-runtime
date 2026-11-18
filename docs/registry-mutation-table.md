@@ -18,7 +18,7 @@ The rows follow from the source; nobody lists the codes by hand. The codes are:
   conformance harness's);
 - the constants `Codes()` in `internal/terraformfile/codes.go` returns (the `TF-*` codes);
 - the keys of `Codes` in `internal/federation/codes.go`, the codes of registry format 1.1.0
-  (proposed): the `FED-*` codes and the `LOCK-*` codes of the lock writer, the lock checker and
+  (released on `registry-v1.1.0`): the `FED-*` codes and the `LOCK-*` codes of the lock writer, the lock checker and
   the lock signature verifier, with its serial record's `LOCK-SERIAL-*` codes, one row each;
 - every constant in the non-test Go files of a `cmd/jpack-emit-*` package whose value is an `x-`
   code, the emitter's own diagnostic codes. `cmd/jpack-emit-go-facts` declares none: its refusals
@@ -65,8 +65,8 @@ probes hold that a code with no row fails the check.
   section or comment says provisional: the registry companion's codes are released on
   `registry-v1.0.0`, the terraform-file companion's on `terraform-file-v1.0.0`, and the RFCs' are
   the RFCs', so every `REG-*`, `REF-*`, `FACTS-*` and `TF-*` row is `no`. The `FED-*` and `LOCK-*`
-  codes are the registry companion's 1.1.0 codes, proposed there and not this runtime's own, so
-  they are `no` too. A source signature code no writer row raises has a case of
+  codes are the registry companion's 1.1.0 codes, released on `registry-v1.1.0`, so they are
+  `no` too. A source signature code no writer row raises has a case of
   `TestEveryCodeIsRaisedByARow` that edits a writer row's inputs (a signature document the rows
   signed, or the signer set), since no key signs anything in this module's tests.
 

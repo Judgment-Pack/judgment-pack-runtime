@@ -1,7 +1,7 @@
 package registry
 
-// What a federation assembly of registry format 1.1.0 (internal/federation,
-// proposed) reuses from the reader of format 1.0.0, whose rules it keeps
+// What a federation assembly of registry format 1.1.0 (internal/federation)
+// reuses from the reader of format 1.0.0, whose rules it keeps
 // unchanged (registry-1.1.0 §1): the admission of one document under its own
 // selector and bound, the reading of a kind declaration and the reach of its
 // schema, pointer patterns, entry references and JSON Pointers. Each is an

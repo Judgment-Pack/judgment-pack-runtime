@@ -1,17 +1,18 @@
 {
   "repository": "https://github.com/Judgment-Pack/judgment-pack-spec",
-  "release": "proposed (not tagged)",
+  "release": "registry-v1.1.0",
   "pullRequest": [
     "https://github.com/Judgment-Pack/judgment-pack-spec/pull/383",
     "https://github.com/Judgment-Pack/judgment-pack-spec/pull/384",
     "https://github.com/Judgment-Pack/judgment-pack-spec/pull/386",
-    "https://github.com/Judgment-Pack/judgment-pack-spec/pull/387"
+    "https://github.com/Judgment-Pack/judgment-pack-spec/pull/387",
+    "https://github.com/Judgment-Pack/judgment-pack-spec/pull/389"
   ],
-  "revision": "7bc0874c719985f6909b3bc606e238773f4aeacd",
+  "revision": "5f95fe86f2e664d116c6b59546d86cf1a063623a",
   "files": {
     "1.1.0/README.md": {
       "upstream": "conformance/registry/1.1.0/README.md",
-      "sha256": "24a6dbe1834b0c7570e1fead51220b26b6df3fddf306a06303e301fe1688b6d1"
+      "sha256": "22b93f0f51fa5b81ffb79f02ecb361756ff9fea9ff56e77e348d59af0d0432e9"
     },
     "1.1.0/assembled/billing-serves-prod/index.json": {
       "upstream": "conformance/registry/1.1.0/assembled/billing-serves-prod/index.json",
@@ -71,7 +72,7 @@
     },
     "1.1.0/codes.json": {
       "upstream": "conformance/registry/1.1.0/codes.json",
-      "sha256": "e01296f2174ded487b4880f461aa61f13e3547c39930cd73898f188cb26836ae"
+      "sha256": "ecece44a9a9058de22b207eeed0679e7d2b536cc632c349791ea4e29d745d196"
     },
     "1.1.0/emitters/db-roles.json": {
       "upstream": "conformance/registry/1.1.0/emitters/db-roles.json",
@@ -223,43 +224,43 @@
     },
     "1.1.0/manifest.json": {
       "upstream": "conformance/registry/1.1.0/manifest.json",
-      "sha256": "23144e5ba594e0ff48cd256275579664fac9b95aca5d63a6d0c1a46b276f02b7"
+      "sha256": "bece90867bab388b410e9e8b4ae0651ebbcbc5f109bf2c491588ad8d83045e8f"
     },
     "1.1.0/schema/assembled-index.schema.json": {
       "upstream": "schema/registry/1.1.0/assembled-index.schema.json",
-      "sha256": "fe5ed16731f427313104168c93879666d77e8f605c8f81416fb81638abcf93a7"
+      "sha256": "7ed1faf515e53ee9fb5e480d1f67096e60dd570587e272a08d479ef8f7b7b2fd"
     },
     "1.1.0/schema/bounds.schema.json": {
       "upstream": "schema/registry/1.1.0/bounds.schema.json",
-      "sha256": "673f2802ef18c169c0ef07776f095d88946cfc176adf00c247aa4e9636523966"
+      "sha256": "dbddb96d7096d3a128683e04a395797be629296ee972674c9b9818cbce19c7d6"
     },
     "1.1.0/schema/common.schema.json": {
       "upstream": "schema/registry/1.1.0/common.schema.json",
-      "sha256": "2b84d40a52d0d16edefb1a53ca57369590dfc596cc31d52844aff5c2581bdb32"
+      "sha256": "a1a0ea35e5c44c640ac70961de1a87e2368e3c9f1cb70d6c68312d54c54a5cda"
     },
     "1.1.0/schema/federation-manifest.schema.json": {
       "upstream": "schema/registry/1.1.0/federation-manifest.schema.json",
-      "sha256": "c84d250b06d37bdfa7485ed4b68a1008e873d02162131ef17abf7e493d300be6"
+      "sha256": "293704db93c4a365b07d350136290c1b3b32d0ad30406e20f07bfd6a4b078145"
     },
     "1.1.0/schema/lock-signature.schema.json": {
       "upstream": "schema/registry/1.1.0/lock-signature.schema.json",
-      "sha256": "3025262991d72f97f4f2ebc276cbe97f40e85819f8c3366a4f272078dd76ded7"
+      "sha256": "8ac6a9f4ae23fee7907a9a4001e4d5c0b6ba407a6cda81aeb001ccd4823fc2ee"
     },
     "1.1.0/schema/lock.schema.json": {
       "upstream": "schema/registry/1.1.0/lock.schema.json",
-      "sha256": "cd792f24c63a423e6e1f7b619225241533efa331a181d75a5e447d55dae206dd"
+      "sha256": "dd52c1bb98730cd71347f92fbc5f45920386a5fef010c459a90c9eb9c2184a10"
     },
     "1.1.0/schema/source-signature.schema.json": {
       "upstream": "schema/registry/1.1.0/source-signature.schema.json",
-      "sha256": "e540e7fb736a3641205b52b44ff8f380f073a277c8e34c2b105a9e14e281c429"
+      "sha256": "fa5a20eb2fb77e5abc3b68a5c88c5723d510ee85ca6e9831323c5db491581957"
     },
     "1.1.0/schema/source-statement.schema.json": {
       "upstream": "schema/registry/1.1.0/source-statement.schema.json",
-      "sha256": "4cc50fc26304265463d12d88d60abe42a35ce2be0061445ad6473f7853c00e05"
+      "sha256": "ff32ec9da747a567e702d2de20d1a658df1ebbe89188fffafc3f924f7893bc5e"
     },
     "1.1.0/schema/validation-report.schema.json": {
       "upstream": "schema/registry/1.1.0/validation-report.schema.json",
-      "sha256": "3c42607b93a52a0dca1e839f75669843b2c29ef3f97ec16a1cacbfd7bde8e069"
+      "sha256": "a5f0e4fa890b98f7688dc49eb7db2a77a78b3f462adc56aaaea7eb8fedd7ec28"
     },
     "1.1.0/signatures/billing-another-commit.json": {
       "upstream": "conformance/registry/1.1.0/signatures/billing-another-commit.json",

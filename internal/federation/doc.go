@@ -1,4 +1,4 @@
-// Package federation is the reader of registry format 1.1.0, proposed: the
+// Package federation is the reader of registry format 1.1.0: the
 // assembly of one registry from the registries of several sources (§§3–4),
 // the assembled index and its check (§5), and the bounds a source may set on
 // the values of the kinds it governs (§6); the lock (§7), its writer (§8),
@@ -11,6 +11,6 @@
 // and does not change. Every input is bounded by size and every collection by
 // count, as the text states, and a repeated JSON member is refused.
 //
-// The format is proposed: what this package writes may change before the
-// text is released.
+// The format is released on the spec tag registry-v1.1.0 and not yet
+// stable; VERSIONING.md says what is promised.
 package federation

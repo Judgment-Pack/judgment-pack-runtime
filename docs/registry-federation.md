@@ -1,9 +1,10 @@
-# Registry federation: assembly, the index check, locks and signatures (proposed)
+# Registry federation: assembly, the index check, locks and signatures
 
-**Status: proposed.** Registry format 1.1.0 is a proposed revision of the registry companion,
-not released, and nothing here is promised under `VERSIONING.md`. The commands and their output
-may change with the text until it is released. Format 1.0.0 and every 1.0.0 command are
-unchanged.
+**Status: released, not yet stable.** Registry format 1.1.0 is the registry companion's
+`spec/registry.md` together with `spec/registry-1.1.0.md`, released on the spec tag
+`registry-v1.1.0`. From the release that names it so in its release notes, the commands, their
+formats, codes and bounds are part of the registry line, as `VERSIONING.md` ("The registry 1.1.0
+reading") says; the readings below are not. Format 1.0.0 and every 1.0.0 command are unchanged.
 
 Format 1.1.0 lets one registry be assembled from several sources: a standard, which governs kinds
 and states bounds, and repositories, which hold their own entries within those bounds. A
@@ -64,7 +65,8 @@ jpack registry lock write --federation federation.json \
   --source standard=<commit>=checkouts/platform \
   --source billing=<commit>=checkouts/billing --no-known \
   --source-signature standard=standard.sig.json --source-signature billing=billing.sig.json \
-  --key <standard owner's key> --repository-key <billing's repository identity>=<its key> \
+  --standard-public-key <standard owner's public key> \
+  --repository-key <billing's repository identity>=<its public key> \
   --first-serial 1 --out assembled.lock.json
 
 jpack registry lock check --lock registry.lock.json --registry registry.json \
@@ -85,10 +87,11 @@ jpack registry lock coverage --lock registry.lock.json \
   default first serial. A previous lock at serial 9007199254740991 leaves no next serial
   (`LOCK-FORM`). A refused write prints `{"refused": [codes]}`, exits 1 and writes no lock; the
   lock goes to `--out`, by default `<name>.lock.json` beside a `<name>.json` input.
-- For an assembly, `write` verifies each source signature before naming it: by `--key`, the
-  standard owner's key, for the standard source, and by `--repository-key` for each repository,
-  over the statement rebuilt from the index. A signature that does not verify refuses the lock
-  with that signature's code. Keys are 64 lowercase hexadecimal characters, obtained out of band.
+- For an assembly, `write` verifies each source signature before naming it: by
+  `--standard-public-key`, the standard owner's public key, for the standard source, and by
+  `--repository-key` for each repository, over the statement rebuilt from the index. A signature
+  that does not verify refuses the lock with that signature's code. These are public keys, 64
+  lowercase hexadecimal characters obtained out of band, never a seed: no flag takes a seed inline.
 - An emitter is a checkout: `--emitter PATH=DIR` (`--source-emitter SOURCE=PATH=DIR` for an
   assembly) names the manifest's path and the directory holding it and the files its `owns`
   matches, which are found as the emit host's check mode finds them and read inside the
@@ -140,7 +143,7 @@ jpack registry lock verify --lock registry.lock.json \
   other source is read, so nothing here checks the assembly. Its document goes to `--output`.
   Neither command writes a document over anything.
 - The seed is read from the file `--key` names, and from nothing else: no flag or environment
-  variable carries a key. It is held to the rules a trail's signing key is held to: named by its
+  variable carries a seed. It is held to the rules a trail's signing key is held to: named by its
   real path with no symbolic link in it, one regular file with one name, on unix owned by the
   user the runtime runs as and readable by nobody else, in directories nobody else can write
   unless their sticky bit is set. On Windows a key's privacy cannot be checked, so no key signs
@@ -156,8 +159,9 @@ jpack registry lock verify --lock registry.lock.json \
 - `--keys` names the expected signer set, a JSON object `{"key": ..., "repositories": {...}}`:
   the lock's (the standard owner's) key and, for an assembly, each repository identity's key,
   64 lowercase hexadecimal characters each. It is given every time and never taken from a
-  document. Every key is held to the trust rule (canonical, not of small order), and a signature
-  is checked with Ed25519 as RFC 8032 states it, an S of the group order or more refused.
+  document. Every key is held to the trust rule (its canonical encoding, a valid point on the
+  curve, not of small order), and a signature is checked with Ed25519 as RFC 8032 states it, an
+  S of the group order or more refused.
 - Signature documents are counted in the order given, the `--signature` documents first. Only
   the first lock signature is read; every document beyond the lock's sources count plus one is
   `LOCK-SIG-EXTRA` and is never opened, so a path there that names nothing, a directory or a pipe
@@ -234,8 +238,6 @@ Where the text leaves a choice open and no row decides it, this reader reads it 
   `LOCK-EMITTER-MISMATCH`, since no host check of it exits 0;
 - a file's source is not compared for a single registry's lock;
 - an index item that is not of its form is `LOCK-SOURCES-MISMATCH` at the lock's item;
-- `verify` reads the bytes of every signature document it is given, each within 4 KiB, and parses
-  none beyond the count;
 - a record that is of another registry id than the one its name is the hash of is
   `LOCK-SERIAL-STATE`.
 

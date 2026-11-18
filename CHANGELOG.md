@@ -2,6 +2,25 @@
 
 All notable changes to tagged releases are documented here.
 
+## Unreleased
+
+- **The registry 1.1.0 reading joins the registry line** (VERSIONING.md, "The registry 1.1.0
+  reading"). Registry format `1.1.0` (`spec/registry.md` with `spec/registry-1.1.0.md`, released on
+  the spec tag `registry-v1.1.0` and not yet stable) is built in full: `jpack registry assemble`
+  and `check-index` (the assembler and the index checker, with bounds), `jpack registry lock write`,
+  `check` and `coverage` (the lock writer and the lock checker), and `jpack registry lock sign`,
+  `jpack registry source sign` and `jpack registry lock verify` (signing, the lock signature
+  verifier and the serial record). The 53 `FED-*` and `LOCK-*` codes are the companion's. The
+  pinned rows run in `internal/federation` and through the commands, every class and every row
+  (162), with the result the companion's second reader gives; that reader is by the same vendor, so
+  this is not a cross-vendor claim. A signing seed is read from a file only, held to the rules a
+  trail's signing key is held to, and never printed; output names a key by its identifier. The
+  serial record is written by compare and set under a lock file the runtime never removes once
+  another verifier left it. On Windows the record's permissions are not checked and its directory
+  is not synced (docs/registry-federation.md). Format `1.0.0` and every command that reads it are
+  unchanged. The rows are pinned to the commit the `registry-v1.1.0` tag names.
+  The conformance claim in CONFORMANCE.md is unchanged.
+
 ## 0.52.0 - 2026-11-18
 
 - **The terraform-file reading joins the registry line** (VERSIONING.md, "The terraform-file
