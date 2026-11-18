@@ -17,6 +17,8 @@ The rows follow from the source; nobody lists the codes by hand. The codes are:
 - the keys of `Codes` in `internal/emit/codes.go` (the `EMIT-*` codes, the host's and the
   conformance harness's);
 - the constants `Codes()` in `internal/terraformfile/codes.go` returns (the `TF-*` codes);
+- the keys of `Codes` in `internal/federation/codes.go`, the codes of registry format 1.1.0
+  (proposed): the `FED-*` codes, one row each, and the `LOCK-*` codes, which are pending (below);
 - every constant in the non-test Go files of a `cmd/jpack-emit-*` package whose value is an `x-`
   code, the emitter's own diagnostic codes. `cmd/jpack-emit-go-facts` declares none: its refusals
   are fixed lines, not diagnostics, so it has no rows.
@@ -34,6 +36,17 @@ the line must name the row's; `scripts/check-mutation-table-probe.py` holds that
 changed to expect another code, and holds the mutant and provisional rules to changed mutants,
 headings and comments. The check does not
 run the mutants; a reviewer does.
+
+Format 1.1.0 is built a conformance class at a time. The codes of the classes not built yet (the
+lock writer, the lock checker and the lock signature verifier, which raise the `LOCK-*` codes) are
+in a section of `internal/federation/codes.go` whose heading says pending, and
+`internal/federation/rows_test.go` lists those classes in `pendingClasses`, which `TestRows` holds
+to the classes it runs: a listed class that is built, or a class neither listed nor run, fails it.
+A pending code is in the code set and has no row. The check fails on a row for a pending code, on a
+non-test Go file that names one in a string literal outside the table (a code raised before it has
+a row), and on any pending code left once `pendingClasses` is empty. So the exemption ends with
+the last class: building it empties the list, and the check then wants a row for every code that
+was pending. The probes hold each of these.
 
 ## Columns
 
@@ -57,7 +70,9 @@ run the mutants; a reviewer does.
   and the comment of a constant that holds a code (the `TF-*` codes, `FACTS-ID-LIMIT`). No
   section or comment says provisional: the registry companion's codes are released on
   `registry-v1.0.0`, the terraform-file companion's on `terraform-file-v1.0.0`, and the RFCs' are
-  the RFCs', so every `REG-*`, `REF-*`, `FACTS-*` and `TF-*` row is `no`.
+  the RFCs', so every `REG-*`, `REF-*`, `FACTS-*` and `TF-*` row is `no`. The `FED-*` codes are
+  the registry companion's 1.1.0 codes, proposed there and not this runtime's own, so they are `no`
+  too.
 
 | code | severity | package | test | mutant site | mutant | provisional |
 |---|---|---|---|---|---|---|
@@ -200,6 +215,28 @@ run the mutants; a reviewer does.
 | `x-ts-member-proto` | error | `./cmd/jpack-emit-ts-constants` | `TestSchemaRefusals` | `cmd/jpack-emit-ts-constants/schema.go:object` | every `codeMemberProto` becomes `codeSchemaUnsupported` | n/a |
 | `x-ts-bounds` | error | `./cmd/jpack-emit-ts-constants` | `TestSharedTypesAreWrittenWithinTheBound` | `cmd/jpack-emit-ts-constants/write.go:generate` | every `codeBounds` becomes `codePath` | n/a |
 | `x-ts-path` | error | `./cmd/jpack-emit-ts-constants` | `TestDeviceNameEnvironmentIsRefused` | `cmd/jpack-emit-ts-constants/write.go:generate` | every `codePath` becomes `codeBounds` | n/a |
+| `FED-MANIFEST` | error | `./internal/federation` | `TestEveryCodeIsRaisedByARow/FED-MANIFEST` | `internal/federation/manifest.go:readManifest` | every `"FED-MANIFEST"` becomes `"FED-REPOSITORY"` | no |
+| `FED-COMMIT` | error | `./internal/federation` | `TestEveryCodeIsRaisedByARow/FED-COMMIT` | `internal/federation/assemble.go:step1` | every `"FED-COMMIT"` becomes `"FED-REPOSITORY"` | no |
+| `FED-REPOSITORY` | error | `./internal/federation` | `TestEveryCodeIsRaisedByARow/FED-REPOSITORY` | `internal/federation/assemble.go:step1` | every `"FED-REPOSITORY"` becomes `"FED-COMMIT"` | no |
+| `FED-SOURCE-MISSING` | error | `./internal/federation` | `TestEveryCodeIsRaisedByARow/FED-SOURCE-MISSING` | `internal/federation/assemble.go:step1` | every `"FED-SOURCE-MISSING"` becomes `"FED-MANIFEST"` | no |
+| `FED-ENVIRONMENTS` | error | `./internal/federation` | `TestEveryCodeIsRaisedByARow/FED-ENVIRONMENTS` | `internal/federation/assemble.go:step3` | every `"FED-ENVIRONMENTS"` becomes `"FED-REGISTRY-DUPLICATE"` | no |
+| `FED-ENVIRONMENT-GAP` | error | `./internal/federation` | `TestEveryCodeIsRaisedByARow/FED-ENVIRONMENT-GAP` | `internal/federation/assemble.go:gaps` | every `"FED-ENVIRONMENT-GAP"` becomes `"FED-ENVIRONMENTS"` | no |
+| `FED-KNOWN-LIMIT` | error | `./internal/federation` | `TestEveryCodeIsRaisedByARow/FED-KNOWN-LIMIT` | `internal/federation/assemble.go:run` | every `"FED-KNOWN-LIMIT"` becomes `"FED-SOURCE-ASSEMBLED"` | no |
+| `FED-SOURCE-ASSEMBLED` | error | `./internal/federation` | `TestEveryCodeIsRaisedByARow/FED-SOURCE-ASSEMBLED` | `internal/federation/assemble.go:step3` | every `"FED-SOURCE-ASSEMBLED"` becomes `"FED-REGISTRY-DUPLICATE"` | no |
+| `FED-REGISTRY-DUPLICATE` | error | `./internal/federation` | `TestEveryCodeIsRaisedByARow/FED-REGISTRY-DUPLICATE` | `internal/federation/assemble.go:step3` | every `"FED-REGISTRY-DUPLICATE"` becomes `"FED-SOURCE-ASSEMBLED"` | no |
+| `FED-KIND-NOT-STANDARD` | error | `./internal/federation` | `TestEveryCodeIsRaisedByARow/FED-KIND-NOT-STANDARD` | `internal/federation/assemble.go:step4` | every `"FED-KIND-NOT-STANDARD"` becomes `"FED-KIND-CONFLICT"` | no |
+| `FED-KIND-CONFLICT` | error | `./internal/federation` | `TestEveryCodeIsRaisedByARow/FED-KIND-CONFLICT` | `internal/federation/assemble.go:step4` | every `"FED-KIND-CONFLICT"` becomes `"FED-KIND-NOT-STANDARD"` | no |
+| `FED-SCOPE-WIDENS` | error | `./internal/federation` | `TestEveryCodeIsRaisedByARow/FED-SCOPE-WIDENS` | `internal/federation/assemble.go:scopeWidenings` | every `"FED-SCOPE-WIDENS"` becomes `"FED-BOUND-WIDENS"` | no |
+| `FED-BOUND-FORM` | error | `./internal/federation` | `TestEveryCodeIsRaisedByARow/FED-BOUND-FORM` | `internal/federation/bounds.go:readBounds` | every `"FED-BOUND-FORM"` becomes `"FED-BOUND-ENVIRONMENT"` | no |
+| `FED-BOUND-ENVIRONMENT` | error | `./internal/federation` | `TestEveryCodeIsRaisedByARow/FED-BOUND-ENVIRONMENT` | `internal/federation/bounds.go:readBounds` | every `"FED-BOUND-ENVIRONMENT"` becomes `"FED-BOUND-FORM"` | no |
+| `FED-BOUND-KIND` | error | `./internal/federation` | `TestEveryCodeIsRaisedByARow/FED-BOUND-KIND` | `internal/federation/boundscheck.go:step7` | every `"FED-BOUND-KIND"` becomes `"FED-BOUND-POINTER-UNREACHABLE"` | no |
+| `FED-BOUND-POINTER-UNREACHABLE` | error | `./internal/federation` | `TestEveryCodeIsRaisedByARow/FED-BOUND-POINTER-UNREACHABLE` | `internal/federation/boundscheck.go:step7` | every `"FED-BOUND-POINTER-UNREACHABLE"` becomes `"FED-BOUND-KIND"` | no |
+| `FED-BOUND-NOT-COMPARABLE` | error | `./internal/federation` | `TestEveryCodeIsRaisedByARow/FED-BOUND-NOT-COMPARABLE` | `internal/federation/bounds.go:readBound` | every `"FED-BOUND-NOT-COMPARABLE"` becomes `"FED-BOUND-FORM"` | no |
+| `FED-BOUND-OVERLAP` | error | `./internal/federation` | `TestEveryCodeIsRaisedByARow/FED-BOUND-OVERLAP` | `internal/federation/boundscheck.go:compare` | every `"FED-BOUND-OVERLAP"` becomes `"FED-BOUND-WIDENS"` | no |
+| `FED-BOUND-WIDENS` | error | `./internal/federation` | `TestEveryCodeIsRaisedByARow/FED-BOUND-WIDENS` | `internal/federation/boundscheck.go:step7` | every `"FED-BOUND-WIDENS"` becomes `"FED-BOUND-OVERLAP"` | no |
+| `FED-BOUND-ENTRIES` | error | `./internal/federation` | `TestEveryCodeIsRaisedByARow/FED-BOUND-ENTRIES` | `internal/federation/boundscheck.go:entryCounts` | every `"FED-BOUND-ENTRIES"` becomes `"FED-VALUE-BOUND"` | no |
+| `FED-VALUE-BOUND` | error | `./internal/federation` | `TestEveryCodeIsRaisedByARow/FED-VALUE-BOUND` | `internal/federation/boundscheck.go:values` | every `"FED-VALUE-BOUND"` becomes `"FED-BOUND-ENTRIES"` | no |
+| `FED-INDEX-MISMATCH` | error | `./internal/federation` | `TestEveryCodeIsRaisedByARow/FED-INDEX-MISMATCH` | `internal/federation/index.go:CheckIndex` | every `"FED-INDEX-MISMATCH"` becomes `"FED-MANIFEST"` | no |
 
 ## Start-up module
 

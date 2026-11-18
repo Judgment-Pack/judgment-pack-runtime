@@ -112,6 +112,10 @@ func claimSurfaces(t *testing.T) []claimSurface {
 		{args: []string{"registry", "facts", "--help"}},
 		{args: []string{"registry", "check-pack", "--help"}},
 		{args: []string{"registry", "import", "--help"}},
+		// Assembly and the index check of registry format 1.1.0 (proposed)
+		// evaluate nothing; they are inventoried for the phrase scans.
+		{args: []string{"registry", "assemble", "--help"}},
+		{args: []string{"registry", "check-index", "--help"}},
 		// The emitter host (ADR-0098) runs an emitter and writes or checks
 		// files; it evaluates nothing and is inventoried for the phrase scans.
 		{args: []string{"emit", "--help"}},
