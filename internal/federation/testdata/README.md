@@ -14,11 +14,10 @@ them to `1.1.0/codes.json`.
 §12; `manifest.json`, its 159 rows; and the documents they name. `1.1.0/schema/` is
 `schema/registry/1.1.0/` unmodified, the closed schemas of the format's documents.
 
-`TestRows` runs every row of a class this package implements, the assembler's 47 and the index
-checker's 5, and holds a list of the classes not built yet (the lock writer, the lock checker and
-the lock signature verifier); it fails when a listed class is built, or when a class is neither
-listed nor run. `TestRegistryAssembleRows` and `TestRegistryCheckIndexRows` in `internal/cli` run
-the same rows through `jpack registry assemble` and `jpack registry check-index`.
+`TestRows` runs every row of every class of §15: the assembler's 47, the index checker's 5, the
+lock writer's 11, the lock checker's 34 and the lock signature verifier's 62. It fails when a class
+is not run, or has another count. The tests in `internal/cli` run the same rows through the
+`jpack registry` commands: `assemble`, `check-index`, `lock write`, `lock check` and `lock verify`.
 
 The rows' second reader, `tools/registry_1_1_0_reader.py` in the Spec repository, gives the same
 result on every row, but it, the rows and this reader are by the same vendor: agreement on these
