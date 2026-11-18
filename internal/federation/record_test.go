@@ -208,6 +208,47 @@ func TestRecordComparesAndSets(t *testing.T) {
 	holds(t, store, nil)
 }
 
+// A lock already recorded, the same serial and digest, is accepted and its
+// record is not written again: no temporary file is renamed over it, and the
+// file is the one it was, its bytes and modification time as they were.
+func TestRecordOfALockAlreadyRecordedIsNotWritten(t *testing.T) {
+	store := NewRecordStore(filepath.Join(t.TempDir(), "records"))
+	writeRecord(t, store, Record{3, digestA})
+	path, _, _ := store.paths(recordID)
+	old := time.Now().Add(-time.Hour).Truncate(time.Second)
+	if err := os.Chtimes(path, old, old); err != nil {
+		t.Fatal(err)
+	}
+	before, err := os.Lstat(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	data, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	renamed := false
+	t.Cleanup(StandInRecordHooksForTests(RecordHooks{BeforeRename: func() error {
+		renamed = true
+		return nil
+	}}))
+	if code, problem := store.record(recordID, &Record{3, digestA}, 3, digestA, nil); code != "" || problem != nil {
+		t.Fatalf("%s %v", code, problem)
+	}
+	if renamed {
+		t.Fatal("the record was written again")
+	}
+	holds(t, store, &Record{3, digestA})
+	after, err := os.Lstat(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	again, err := os.ReadFile(path)
+	if err != nil || !os.SameFile(before, after) || !after.ModTime().Equal(before.ModTime()) || string(again) != string(data) {
+		t.Fatalf("the record changed: %v %v %v", before.ModTime(), after.ModTime(), err)
+	}
+}
+
 // A record file is exactly its four members: anything else is refused.
 func TestDecodeRecord(t *testing.T) {
 	good := `{"digest":"` + digestA + `","formatVersion":"1.0.0","registryId":"` + recordID + `","serial":42}` + "\n"

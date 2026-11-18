@@ -28,8 +28,22 @@ func TestRecordModesWritten(t *testing.T) {
 
 // A record directory or file that its group or other users can write, a
 // record that is a link or not a regular file, and a directory that is a
-// link, are refused when read and when written, and nothing is written.
+// link, are refused when read and when written, each for its own reason,
+// and nothing is written.
 func TestRecordRefusesWhatOthersCanChange(t *testing.T) {
+	const (
+		directoryWritable = "the record directory can be written by its group or by other users"
+		recordWritable    = "the record can be written by its group or by other users"
+		notRegular        = "the record is not one regular file"
+	)
+	reasons := map[string]string{
+		"group-writable directory":  directoryWritable,
+		"world-writable directory":  directoryWritable,
+		"group-writable record":     recordWritable,
+		"world-writable record":     recordWritable,
+		"record through a link":     notRegular,
+		"record not a regular file": notRegular,
+	}
 	cases := map[string]func(t *testing.T, store *RecordStore, path string){
 		"group-writable directory": func(t *testing.T, store *RecordStore, _ string) { chmod(t, store.dir, 0o770) },
 		"world-writable directory": func(t *testing.T, store *RecordStore, _ string) { chmod(t, store.dir, 0o703) },
@@ -60,11 +74,11 @@ func TestRecordRefusesWhatOthersCanChange(t *testing.T) {
 			path, _, _ := store.paths(recordID)
 			arrange(t, store, path)
 			before := snapshot(t, store.dir)
-			if _, problem := store.read(recordID); problem == nil {
-				t.Fatal("read")
+			if _, problem := store.read(recordID); problem == nil || problem.Reason != reasons[name] {
+				t.Fatalf("read: %v, want %q", problem, reasons[name])
 			}
-			if code, problem := store.record(recordID, &Record{3, digestA}, 4, digestB, nil); code != "" || problem == nil {
-				t.Fatalf("written: %s", code)
+			if code, problem := store.record(recordID, &Record{3, digestA}, 4, digestB, nil); code != "" || problem == nil || problem.Reason != reasons[name] {
+				t.Fatalf("written: %s %v, want %q", code, problem, reasons[name])
 			}
 			if after := snapshot(t, store.dir); after != before {
 				t.Fatalf("changed:\n%s\n%s", before, after)
