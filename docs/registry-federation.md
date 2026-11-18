@@ -1,9 +1,10 @@
-# Registry federation: assembly, the index check, locks and signatures (proposed)
+# Registry federation: assembly, the index check, locks and signatures
 
-**Status: proposed.** Registry format 1.1.0 is a proposed revision of the registry companion,
-not released, and nothing here is promised under `VERSIONING.md`. The commands and their output
-may change with the text until it is released. Format 1.0.0 and every 1.0.0 command are
-unchanged.
+**Status: released, not yet stable.** Registry format 1.1.0 is the registry companion's
+`spec/registry.md` together with `spec/registry-1.1.0.md`, released on the spec tag
+`registry-v1.1.0`. From the release that names it so in its release notes, the commands, their
+formats, codes and bounds are part of the registry line, as `VERSIONING.md` ("The registry 1.1.0
+reading") says; the readings below are not. Format 1.0.0 and every 1.0.0 command are unchanged.
 
 Format 1.1.0 lets one registry be assembled from several sources: a standard, which governs kinds
 and states bounds, and repositories, which hold their own entries within those bounds. A

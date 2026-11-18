@@ -14,13 +14,13 @@ import (
 	"github.com/spf13/cobra"
 )
 
-const lockLong = " Registry format 1.1.0 is proposed, not released; the federation package says so. Nothing is fetched, and no emitter or host is run."
+const lockLong = " Registry format 1.1.0 is released on the spec tag registry-v1.1.0, and not yet stable. Nothing is fetched, and no emitter or host is run."
 
 func (a *App) registryLockCommand() *cobra.Command {
 	command := &cobra.Command{
 		Use:   "lock",
-		Short: "Write, check and compute coverage of a registry lock (registry 1.1.0, proposed)",
-		Long:  "A lock (registry format 1.1.0 §7, proposed) names a registry by digest, its kinds, each environment's resolved registry, and, for an assembly, the index and each source's statement and signature, with the emitters' generated files. The standard owner's key signs a lock (§10), and a verifier checks the signatures and the serial and keeps the serial record (§11)." + lockLong,
+		Short: "Write, check and compute coverage of a registry lock (registry 1.1.0)",
+		Long:  "A lock (registry format 1.1.0 §7) names a registry by digest, its kinds, each environment's resolved registry, and, for an assembly, the index and each source's statement and signature, with the emitters' generated files. The standard owner's key signs a lock (§10), and a verifier checks the signatures and the serial and keeps the serial record (§11)." + lockLong,
 		Args:  cobra.NoArgs,
 		RunE: func(command *cobra.Command, _ []string) error {
 			return command.Help()
@@ -231,8 +231,8 @@ func (a *App) registryLockWriteCommand() *cobra.Command {
 	var kinds, signatures, repositoryKeys []string
 	command := &cobra.Command{
 		Use:     "write (--registry FILE --kind FILE... | --federation FILE --source NAME=COMMIT=DIR... --source-signature NAME=FILE... --key HEX --repository-key URI=HEX... (--known-index FILE... --known-lock FILE... | --no-known)) (--previous FILE | --first-serial N) [--out FILE]",
-		Short:   "Write the lock of a registry or an assembly (registry 1.1.0, proposed)",
-		Long:    "Write a lock by registry format 1.1.0 §8 (proposed): the registry's digest, its kinds and each environment's resolved digest; for an assembly, the index's digest and each source's statement and accepted source signature, each verified by the key the signer set names (--key, the standard owner's, and --repository-key for each repository); and the emitters' files. The serial is one above the --previous lock's, or the --first-serial given out of band: there is no default. Each emitter needs --emitter-check, the exit code of the host's check of it against this registry; the lock lists emitters only when every check exited 0. The lock is written to --out, by default <name>.lock.json beside a <name>.json registry or manifest, as its RFC 8785 bytes. Exit 0 when written; 1 when refused, writing {\"refused\": [codes]} and no lock." + lockLong,
+		Short:   "Write the lock of a registry or an assembly (registry 1.1.0)",
+		Long:    "Write a lock by registry format 1.1.0 §8: the registry's digest, its kinds and each environment's resolved digest; for an assembly, the index's digest and each source's statement and accepted source signature, each verified by the key the signer set names (--key, the standard owner's, and --repository-key for each repository); and the emitters' files. The serial is one above the --previous lock's, or the --first-serial given out of band: there is no default. Each emitter needs --emitter-check, the exit code of the host's check of it against this registry; the lock lists emitters only when every check exited 0. The lock is written to --out, by default <name>.lock.json beside a <name>.json registry or manifest, as its RFC 8785 bytes. Exit 0 when written; 1 when refused, writing {\"refused\": [codes]} and no lock." + lockLong,
 		Example: "jpack registry lock write --registry registry.json --kind kinds/database.json --kind kinds/db-role.json --previous registry.lock.json",
 		Args:    cobra.NoArgs,
 		RunE: func(_ *cobra.Command, _ []string) error {
@@ -403,8 +403,8 @@ func (a *App) registryLockCheckCommand() *cobra.Command {
 	var kinds []string
 	command := &cobra.Command{
 		Use:     "check --lock FILE --registry FILE --kind FILE... [--index FILE] [--emitter PATH=DIR... | --source-emitter SOURCE=PATH=DIR...] --registry-id URI --require-index true|false",
-		Short:   "Check a lock against its registry, index and emitters and write the report (registry 1.1.0, proposed)",
-		Long:    "Check a lock by registry format 1.1.0 §9 (proposed): its form and canonical bytes, the expected registry id and index requirement, then the registry (validated), its kinds and each environment's resolved digest, the index and each source's statement when the lock names an index, and each emitter's manifest and owned files when it names emitters. An index given for a lock that names none, or one missing for a lock that names one, is refused, never skipped. A check establishes byte identity, not authorship: jpack registry lock verify checks who signed (§11). The report is RFC 8785 canonical JSON followed by one newline. Exit 0 when the lock checks, 1 when it does not." + lockLong,
+		Short:   "Check a lock against its registry, index and emitters and write the report (registry 1.1.0)",
+		Long:    "Check a lock by registry format 1.1.0 §9: its form and canonical bytes, the expected registry id and index requirement, then the registry (validated), its kinds and each environment's resolved digest, the index and each source's statement when the lock names an index, and each emitter's manifest and owned files when it names emitters. An index given for a lock that names none, or one missing for a lock that names one, is refused, never skipped. A check establishes byte identity, not authorship: jpack registry lock verify checks who signed (§11). The report is RFC 8785 canonical JSON followed by one newline. Exit 0 when the lock checks, 1 when it does not." + lockLong,
 		Example: "jpack registry lock check --lock registry.lock.json --registry registry.json --kind kinds/database.json --kind kinds/db-role.json --registry-id https://example.test/registries/platform --require-index false",
 		Args:    cobra.NoArgs,
 		RunE: func(_ *cobra.Command, _ []string) error {
@@ -463,8 +463,8 @@ func (a *App) registryLockCoverageCommand() *cobra.Command {
 	var lockPath, resolved, file, fileSource string
 	command := &cobra.Command{
 		Use:     "coverage --lock FILE --registry-id URI --require-index true|false --environment ENV (--resolved FILE | --file PATH=LOCAL [--file-source NAME])",
-		Short:   "Say whether a lock covers a resolved registry or a generated file and write the report (registry 1.1.0, proposed)",
-		Long:    "Compute coverage by registry format 1.1.0 §9.1 (proposed): the lock is first held to §9's step 1, then a resolved registry is covered when it is of the expected environment and is the one the lock names for it, and a generated file when an emitters item lists its path, mode (read from disk) and digest, of its --file-source in an assembled lock. Coverage establishes byte identity with what the lock names; a consumer verifies the lock first (§11, jpack registry lock verify). The report names no registry, and is RFC 8785 canonical JSON followed by one newline. Exit 0 when covered, 1 when not." + lockLong,
+		Short:   "Say whether a lock covers a resolved registry or a generated file and write the report (registry 1.1.0)",
+		Long:    "Compute coverage by registry format 1.1.0 §9.1: the lock is first held to §9's step 1, then a resolved registry is covered when it is of the expected environment and is the one the lock names for it, and a generated file when an emitters item lists its path, mode (read from disk) and digest, of its --file-source in an assembled lock. Coverage establishes byte identity with what the lock names; a consumer verifies the lock first (§11, jpack registry lock verify). The report names no registry, and is RFC 8785 canonical JSON followed by one newline. Exit 0 when covered, 1 when not." + lockLong,
 		Example: "jpack registry lock coverage --lock registry.lock.json --registry-id https://example.test/registries/platform --require-index false --environment prod --resolved resolved-prod.json",
 		Args:    cobra.NoArgs,
 		RunE: func(_ *cobra.Command, _ []string) error {

@@ -35,15 +35,15 @@ func (f *federationInputs) register(command *cobra.Command) {
 	command.Flags().BoolVar(&f.noKnown, "no-known", false, "State that the list of known assembled indexes and locks is empty")
 }
 
-const federationLong = " Each source's paths are read from its directory, as the manifest names them, and a path whose file is absent is not given (FED-SOURCE-MISSING); nothing is fetched. The known list has no default: give --known-index and --known-lock for each, or --no-known for none. The report is RFC 8785 canonical JSON followed by one newline. Registry format 1.1.0 is proposed, not released; the federation package says so."
+const federationLong = " Each source's paths are read from its directory, as the manifest names them, and a path whose file is absent is not given (FED-SOURCE-MISSING); nothing is fetched. The known list has no default: give --known-index and --known-lock for each, or --no-known for none. The report is RFC 8785 canonical JSON followed by one newline. Registry format 1.1.0 is released on the spec tag registry-v1.1.0, and not yet stable."
 
 func (a *App) registryAssembleCommand() *cobra.Command {
 	inputs := &federationInputs{}
 	registryOut, indexOut := "", ""
 	command := &cobra.Command{
 		Use:     "assemble --federation FILE --source NAME=COMMIT=DIR... (--known-index FILE... --known-lock FILE... | --no-known)",
-		Short:   "Assemble one registry from a federation's sources and write the report (registry 1.1.0, proposed)",
-		Long:    "Assemble the registry a federation manifest names from its sources, by registry format 1.1.0 §4 (proposed), and write the report. With no error, write the assembled registry and the index to --registry-out and --index-out when given; with an error, write neither. Exit 0 when the assembly has no error (warnings allowed), 1 when it has one." + federationLong,
+		Short:   "Assemble one registry from a federation's sources and write the report (registry 1.1.0)",
+		Long:    "Assemble the registry a federation manifest names from its sources, by registry format 1.1.0 §4, and write the report. With no error, write the assembled registry and the index to --registry-out and --index-out when given; with an error, write neither. Exit 0 when the assembly has no error (warnings allowed), 1 when it has one." + federationLong,
 		Example: "jpack registry assemble --federation federation.json --source billing=<commit>=checkouts/billing --source standard=<commit>=checkouts/platform --no-known --registry-out assembled.json --index-out index.json",
 		Args:    cobra.NoArgs,
 		RunE: func(_ *cobra.Command, _ []string) error {
@@ -88,8 +88,8 @@ func (a *App) registryCheckIndexCommand() *cobra.Command {
 	index := ""
 	command := &cobra.Command{
 		Use:     "check-index --index FILE --federation FILE --source NAME=COMMIT=DIR... (--known-index FILE... --known-lock FILE... | --no-known)",
-		Short:   "Check an assembled index against a second assembly and write the report (registry 1.1.0, proposed)",
-		Long:    "Assemble again from the sources at the commits the index names, by registry format 1.1.0 §5.1 (proposed), and hold the index that assembly would write to the given one, JCS for JCS. Exit 0 when they are equal and the assembly has no error, 1 otherwise. A verifier that cannot read the repositories holds only the index's word for where the bytes came from." + federationLong,
+		Short:   "Check an assembled index against a second assembly and write the report (registry 1.1.0)",
+		Long:    "Assemble again from the sources at the commits the index names, by registry format 1.1.0 §5.1, and hold the index that assembly would write to the given one, JCS for JCS. Exit 0 when they are equal and the assembly has no error, 1 otherwise. A verifier that cannot read the repositories holds only the index's word for where the bytes came from." + federationLong,
 		Example: "jpack registry check-index --index index.json --federation federation.json --source billing=<commit>=checkouts/billing --source standard=<commit>=checkouts/platform --no-known",
 		Args:    cobra.NoArgs,
 		RunE: func(_ *cobra.Command, _ []string) error {
