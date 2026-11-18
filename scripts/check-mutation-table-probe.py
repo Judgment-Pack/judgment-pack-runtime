@@ -227,6 +227,26 @@ expect('a pending code in a comment is not raised',
 expect('pending codes with no class left to build are refused', check.pending_problems(pending, [], {}, {}) != [])
 unmarked = federation_codes.replace('pending', 'built')
 expect('a section heading that does not say pending holds no pending code', check.pending_codes(unmarked) == set())
+expect('the pending heading is in the code table', check.PENDING_HEADING + ' ' in federation_codes.replace('\n\t//', ' //'))
+loose = federation_codes.replace(check.PENDING_HEADING, '// §12.2: locks and signatures, not yet pending.', 1)
+expect('the probe changes the pending heading', loose != federation_codes)
+expect('a heading that says pending but is not the pending heading holds no pending code', check.pending_codes(loose) == set())
+assembly_heading = '// §12.1: assembly, the assembled index and bounds.'
+mentions = federation_codes.replace(assembly_heading, assembly_heading[:-1] + ', none pending.', 1)
+expect('the probe makes another heading mention pending', mentions != federation_codes)
+expect('another heading that mentions pending holds no pending code', check.pending_codes(mentions) == pending)
+prefix = lock.split('-', 1)[0] + '-'
+for label, source in (
+        ('a concatenation', 'func f(x string) { add("%s" + x, at) }' % prefix),
+        ('a Sprintf', 'func f(x string) { add(fmt.Sprintf("%s%%s", x), at) }' % prefix),
+        ('a format with a verb after more text', 'func f(x string) { add(fmt.Sprintf("code %s%%v", x), at) }' % prefix),
+        ('a raw string concatenation', 'func f(x string) { add(`%s` + x, at) }' % prefix)):
+    expect('a file that builds a pending code at run time with %s is refused' % label,
+           any('at run time' in p for p in check.pending_problems(pending, classes, {}, {'internal/federation/lock.go': source})))
+expect('a pending prefix built only in a comment is not refused',
+       check.pending_problems(pending, classes, {}, {'internal/federation/lock.go': '// add("%s" + x)' % prefix}) == [])
+expect('a code of another family that ends in the prefix\'s letters is not refused',
+       check.pending_problems(pending, classes, {}, {'internal/federation/lock.go': 'x := "UNLOCK-" + y'}) == [])
 with contextlib.redirect_stderr(io.StringIO()):
     try:
         check.pending_classes('var pendingClasses []string')

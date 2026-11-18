@@ -271,12 +271,16 @@ def derive():
 # class is built: then the code leaves the pending section, and needs one.
 FEDERATION_CODES = 'internal/federation/codes.go'
 FEDERATION_ROWS = 'internal/federation/rows_test.go'
+# The pending section's heading begins with this line, exactly: a heading that only mentions
+# pending somewhere else is not it.
+PENDING_HEADING = '// §12.2: locks and signatures, pending.'
 
 
 def pending_codes(text=None):
-    """The codes of `var Codes` in internal/federation/codes.go (or text, its source) under a
-    section heading that says pending."""
-    return {code for code, heading in section_headings(FEDERATION_CODES, 'Codes', text).items() if 'pending' in heading}
+    """The codes of `var Codes` in internal/federation/codes.go (or text, its source) under the
+    pending section's heading: one whose first sentence is PENDING_HEADING, exactly."""
+    return {code for code, heading in section_headings(FEDERATION_CODES, 'Codes', text).items()
+            if heading == PENDING_HEADING or heading.startswith(PENDING_HEADING + ' ')}
 
 
 def pending_classes(text=None):
@@ -297,19 +301,28 @@ def without_table(text, name):
 def pending_problems(pending, classes, rows, sources):
     """Why the pending codes are not held where they are, as a list: a pending code that rows (the
     table's codes) has a row for; a pending code that a non-test Go file of sources ({path: text})
-    names, in a string literal, outside the code table; or a pending code at all, when classes,
-    the classes still to build, is empty."""
+    names, in a string literal, outside the code table; a literal there that builds a code of a
+    pending code's family at run time (its prefix, such as LOCK-, followed by a format verb or by
+    the literal's end, as "LOCK-" + x or "LOCK-%s" would); or a pending code at all, when
+    classes, the classes still to build, is empty."""
     out = []
     for code in sorted(pending & set(rows)):
         out.append('%s: %s is pending, and pending codes have no row until their class is built' % (TABLE, code))
+    prefixes = sorted({code.split('-', 1)[0] + '-' for code in pending})
+    built = re.compile(r'(?<![A-Za-z0-9-])(%s)(?=%%|["`]$)' % '|'.join(map(re.escape, prefixes))) if prefixes else None
     for path in sorted(sources):
         text = without_table(sources[path], 'Codes') if path == FEDERATION_CODES else sources[path]
-        named = set()
-        for literal in go_code(text)[1]:
+        named, building = set(), set()
+        for literal in go_code(text, raw=True)[1]:
             named.update(t for t in re.findall(r'[A-Za-z][A-Za-z0-9]*(?:-[A-Za-z0-9]+)+', literal) if t in pending)
+            if built is not None:
+                building.update(built.findall(literal))
         for code in sorted(named):
             out.append('%s names %s, a pending code: move it out of the pending section of %s, and give it a row'
                        % (path, code, FEDERATION_CODES))
+        for prefix in sorted(building):
+            out.append('%s builds a %s code at run time, the family of pending codes: name a code in full, once its '
+                       'class is built' % (path, prefix))
     if pending and not classes:
         out.append('%s lists no class still to build, and %s holds %d pending codes: give each a row'
                    % (FEDERATION_ROWS, FEDERATION_CODES, len(pending)))
@@ -352,9 +365,10 @@ def function_body(path, name):
 MUTANT = re.compile(r'every `([^`]+)` becomes `([^`]+)`')
 
 
-def go_code(text):
+def go_code(text, raw=False):
     """text, a piece of Go source, with its comments removed and every string or rune literal
-    replaced by a blank, and the interpreted string literals it holds, as written."""
+    replaced by a blank, and the interpreted string literals it holds, as written (with raw, the
+    raw string literals too)."""
     out, literals, i, n = [], [], 0, len(text)
     while i < n:
         if text.startswith('//', i):
@@ -376,8 +390,11 @@ def go_code(text):
             i = j
         elif text[i] == '`':
             end = text.find('`', i + 1)
-            i = n if end < 0 else end + 1
+            j = n if end < 0 else end + 1
+            if raw:
+                literals.append(text[i:j])
             out.append(' ')
+            i = j
         else:
             out.append(text[i])
             i += 1
