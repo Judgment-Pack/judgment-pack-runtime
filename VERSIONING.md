@@ -181,16 +181,19 @@ terraform facts`, RFC 0038 §6's batch tool. RFC 0038 calls the batch a product 
 reference runtime. Its lines are RFC 8785 canonical bytes with no selector of their own, and they
 are provisional with the reader: a change to their bytes for the same file is named in the release
 notes. The dialect companion's §4.5 (`spec/dialect.md`, proposed) makes `terraform-file` a
-proposed kind of dialect version 3, and the reader's refusal codes are its: `TF-SIZE`, `TF-JSON`,
-`TF-FORMAT`, `TF-DOCUMENT`, `TF-SENSITIVITY`, `TF-SELECT-BOUND`, `TF-NUMBER` and `TF-VALUE-LIMIT`.
-Its first accepted `format_version` table is the one this runtime names `proposed-1` (plan `1.0`,
-`1.1` and `1.2`; state `1.0`), and the table's release number is left open. §4.5 has each
-accepted `format_version` backed by vectors written by hand to the shape that version documents,
-with no Terraform run and no recorded output. No spec release carries §4.5 yet, so the codes,
-their fixed messages, the table and the batch lines are provisional, and `jpack terraform facts` is
-outside the registry line's 1.0 promise ([The registry line](#the-registry-line)). A later spec
-release carries §4.5 and names the table's release; if its codes or table differ, this runtime
-adopts them and says so in its release notes.
+proposed kind of dialect version 3, and the reading is the terraform-file companion's
+(`spec/terraform-file.md`, reading `1.0.0`, proposed, whose first release is to be the scoped tag
+`terraform-file-v1.0.0`). The reader's refusal codes are that companion's (§9): `TF-SIZE`,
+`TF-JSON`, `TF-FORMAT`, `TF-DOCUMENT`, `TF-SENSITIVITY`, `TF-SELECT-BOUND`, `TF-NUMBER` and
+`TF-VALUE-LIMIT`. Its first accepted `format_version` table (plan `1.0`, `1.1` and `1.2`; state
+`1.0`) has the release `1.0.0`, which the acquisition record carries as `formatTable` (§4, §7).
+The companion has each accepted `format_version` backed by vectors written by hand to the shape
+that version documents, with no Terraform run and no recorded output, proposed with it; this
+runtime's tests run them at a pinned Spec revision (`internal/terraformfile/testdata`, by digest).
+The companion's first release, `terraform-file-v1.0.0`, publishes the text, the code list, the table
+and the vectors as released and not yet stable, and the release that names the reading part of the
+line pins the vectors to that tag's commit. From that release, the command, its batch lines, the
+codes and the table are promised as [The terraform-file reading](#the-terraform-file-reading) says.
 
 `jpack emit` (ADR-0098) follows the same rule. It reads and writes these formats:
 
@@ -334,6 +337,69 @@ The module is under the 1.0 promise, while `jpack` and the runtime module stay 0
 A change that breaks any of these is a new major version, under the path `.../startup/v2`. The
 wording of error messages is not promised.
 
+## The terraform-file reading
+
+The terraform-file reading (`internal/terraformfile`, ADR-0097) reads the JSON `terraform show
+-json` writes for a saved plan or for state, and is reached through `jpack terraform facts`. It
+follows the terraform-file companion's first release, `terraform-file-v1.0.0`
+(`spec/terraform-file.md`, reading `1.0.0`), which is published as released and not yet stable.
+The companion itself makes no stability promise before its first stable release (its §10). This
+promise is the runtime's, and it is to the companion release it names: what follows holds the
+reading as `terraform-file-v1.0.0` states it, whatever a later companion release says. It joins
+the registry line from the release that names it so in its release notes, and from then on, within
+major version 1 of the line, these are part of it:
+
+- the commands `jpack terraform` and `jpack terraform facts`, with the flags `--plan`, `--state`,
+  `--type`, `--mode`, `--address`, `--actions`, `--max` and `--max-bytes`, their forms and
+  defaults, and their exit codes: 0 when the batch was written, an empty one included; 2 when the
+  file was refused, or the run with `FACTS-ID-LIMIT` or `FACTS-DOCUMENT-LIMIT`; 3 for an unusable
+  command line; and 4 when the file could not be read or the batch written;
+- the reading of the companion's §§2 to 9 at that release: its steps and their order, the removal
+  of every value marked sensitive before anything is selected, selection, the acquired value, and
+  the eight refusal codes `TF-SIZE`, `TF-JSON`, `TF-FORMAT`, `TF-DOCUMENT`, `TF-SENSITIVITY`,
+  `TF-SELECT-BOUND`, `TF-NUMBER` and `TF-VALUE-LIMIT`, each an error;
+- the accepted `format_version` table, release `1.0.0`: plan `1.0`, `1.1` and `1.2`; state `1.0`;
+- the batch lines of the companion's §8, as their bytes: one RFC 8785 canonical line per selected
+  resource, `{"facts":{"resource":…,"terraform":{"document","formatVersion","sha256"}},"id":…}`,
+  in id order, each ending with one newline. The lines have no selector of their own, so a change
+  to their bytes for the same file and the same flags is a breaking change;
+- a refusal's diagnostic, as its bytes: one RFC 8785 canonical JSON object on standard error,
+  ending with one newline, with the members `bytes`, `code`, `message` and `sha256`, or, for a
+  standard input longer than `--max-bytes`, `code` and `message` only; and no line on standard
+  output. `message` is the code's fixed text, the same for every file, and holds nothing read from
+  the file. Its wording is part of the promised bytes; a consumer still branches on `code`;
+- the bounds: `--max-bytes` from 1 to 268435456 (default 67108864), `--max` from 1 to 10000
+  (default 1000), at most 64 types, an address pattern of at most 512 characters, nesting at most
+  128 deep, a number's normal form of at most 64 characters, the value bound `L` (the lesser of
+  268435456 bytes and sixteen times the file), a batch line's id of 1 to 256 bytes, and the
+  facts-document limit `registry facts` holds its documents to.
+
+Not part of it: the wording of other messages, such as the CLI's own diagnostics for exit 3 and 4;
+the Go package and its acquisition record, which no command writes; the kind in a dialect document,
+which waits on dialect version 3; Terraform's outputs, other tools that write the same JSON, and
+`format_version` values `0.x`; and memory use and time.
+
+**Later companion releases.** This runtime adopts a later companion release only in a release that
+names it in its release notes. A companion release that only adds a table row is adopted in a minor
+release, as the next paragraph says. One that changes a code, a bound, a step or rule of the
+reading, or the bytes of a batch line or a diagnostic for a file already read, is a breaking change
+here: this runtime adopts it only in major version 2 of the line, under new selectors, as the
+line's removals wait. The companion becoming stable, when a second, independently written reader
+agrees on every vector (its §12), changes nothing in this promise.
+
+**A new table row.** The companion adds an accepted `format_version` as a patch release of the
+table (its §4), and the table never shrinks. The companion's "patch" names the table's own release
+number, not this runtime's. This runtime adopts a new row in a minor release, since a row reads
+files that were refused before, which is an addition and not a fix. Its release notes name the
+table release it implements: a file of that version, which was `TF-FORMAT`, is then read, and a
+file of a version already accepted gives the same lines. No row is removed within major version 1.
+A version the table does not list stays `TF-FORMAT`, a newer minor of a listed major included.
+
+The rules of [The registry line](#the-registry-line) apply to it: nothing is removed, no bound is
+tightened, and a new refusal code, or a refusal of a file that was read before, is a breaking
+change; its security and conformance fixes are the line's, a conformance fix citing the
+terraform-file companion's section.
+
 ## Release artifacts
 
 An immutable CLI release contains, at minimum:
@@ -380,7 +446,10 @@ The registry line is the registry companion's surface in this repository:
   `jpack-emit-go-facts` (`cmd/jpack-emit-*`), as far as the registry companion's §11.6 promises
   them: each one's manifest (its `emitter.json`), the kinds it reads and its options, not the bytes
   it writes;
-- the start-up module (see [The start-up module](#the-start-up-module)).
+- the start-up module (see [The start-up module](#the-start-up-module));
+- the terraform-file reading's command, `jpack terraform facts` (see
+  [The terraform-file reading](#the-terraform-file-reading)), from the release that names it so in
+  its release notes.
 
 An emitter's own `x-` diagnostic codes are not part of it: they belong to that emitter, are
 neither provisional nor stable under this promise, follow the emitter's own version and release
@@ -391,10 +460,11 @@ first-version scope. `jpack-emit-go-facts`' refusal of open objects, `anyOf` and
 named members with a `*` member is first-version scope and may be lifted in 1.x. Lifting it accepts
 contracts it refused, and changes nothing it generates for a contract it accepts.
 
-`jpack terraform facts` and the `terraform-file` reader are not part of it. No spec release
-carries dialect §4.5 yet, so the command, its flags, its batch lines, the `TF-*` codes and the
-`proposed-1` table stay provisional, and a later release may change them, naming the change in its
-release notes. `FACTS-ID-LIMIT`, which the command also reports, is the registry companion's.
+`jpack terraform facts` is part of it as [The terraform-file reading](#the-terraform-file-reading)
+says, from the release that names it so in its release notes; before that release it is
+provisional, and a release may change it, naming the change in its release notes.
+`FACTS-ID-LIMIT` and `FACTS-DOCUMENT-LIMIT`, which the command also reports, are the registry
+companion's.
 
 It is stable from the release that names it so in its release notes. That release first settles
 everything the sections above call provisional for the line: the codes are those of the released

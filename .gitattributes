@@ -25,6 +25,12 @@ internal/dialect/testdata/** -text
 # The annotation-vocabulary rows have exact upstream checksums.
 internal/vocabulary/testdata/** -text
 
+# The terraform-file reading's vectors have exact upstream checksums, and two of
+# their inputs are white space by design, as the Spec marks them.
+internal/terraformfile/testdata/** -text
+internal/terraformfile/testdata/1.0.0/vectors/json/trailing-whitespace.json -whitespace
+internal/terraformfile/testdata/1.0.0/vectors/json/white-space-only.json -whitespace
+
 # The analysis fixtures are read as exact bytes: a report carries the digest
 # of its pack, and a golden report holds that digest.
 internal/packadvice/testdata/core050/** -text
