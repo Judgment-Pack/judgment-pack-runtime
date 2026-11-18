@@ -3,9 +3,10 @@
   "release": "proposed (not tagged)",
   "pullRequest": [
     "https://github.com/Judgment-Pack/judgment-pack-spec/pull/383",
-    "https://github.com/Judgment-Pack/judgment-pack-spec/pull/384"
+    "https://github.com/Judgment-Pack/judgment-pack-spec/pull/384",
+    "https://github.com/Judgment-Pack/judgment-pack-spec/pull/386"
   ],
-  "revision": "c47d2b4154785b92a644d3c90642f0db355916d8",
+  "revision": "e0d5a986fc6e24e34bcc26631f2af6aa6b1b7515",
   "files": {
     "1.1.0/README.md": {
       "upstream": "conformance/registry/1.1.0/README.md",
@@ -115,6 +116,10 @@
       "upstream": "conformance/registry/1.1.0/federation/repository-userinfo.json",
       "sha256": "2889aab84ddad96e69106710ea1a07a1b154afbbcee5a6cf34a9de476ce1df39"
     },
+    "1.1.0/federation/scopes-three-sources.json": {
+      "upstream": "conformance/registry/1.1.0/federation/scopes-three-sources.json",
+      "sha256": "2306d539033c16f12387bf1ffd8b0b8e5571ac4d105bac3fbff69d69c4fc5e25"
+    },
     "1.1.0/federation/services.json": {
       "upstream": "conformance/registry/1.1.0/federation/services.json",
       "sha256": "097b8306c1e9fda1360273861f1a603507c25511c263b15dd47fb78b721f5e4a"
@@ -217,7 +222,7 @@
     },
     "1.1.0/manifest.json": {
       "upstream": "conformance/registry/1.1.0/manifest.json",
-      "sha256": "2043dc324c7e404ffdca2ac649c26ac322c9533e5a83473baae26e74250b5a9c"
+      "sha256": "bace3529887ff12a590b8a06ef51a4cbe2473ec8928a588368fd20db10c0841d"
     },
     "1.1.0/schema/assembled-index.schema.json": {
       "upstream": "schema/registry/1.1.0/assembled-index.schema.json",
@@ -390,6 +395,18 @@
     "1.1.0/sources/billing/registry.json": {
       "upstream": "conformance/registry/1.1.0/sources/billing/registry.json",
       "sha256": "774830e9a5404280b40eb4f0e19554e9952e52d56eeb1befbb70c1d20cc0543f"
+    },
+    "1.1.0/sources/billing/scopes-dev-again.json": {
+      "upstream": "conformance/registry/1.1.0/sources/billing/scopes-dev-again.json",
+      "sha256": "37778818ddedc89ece550b681064f170ceeca833452f1708534b0ef647fa6a1f"
+    },
+    "1.1.0/sources/billing/scopes-dev-first.json": {
+      "upstream": "conformance/registry/1.1.0/sources/billing/scopes-dev-first.json",
+      "sha256": "15cd93bd30419277622bd3ae515e269efd2cfe432e98d4a4a18578494eb04e55"
+    },
+    "1.1.0/sources/billing/scopes-prod.json": {
+      "upstream": "conformance/registry/1.1.0/sources/billing/scopes-prod.json",
+      "sha256": "eaa596259e1de49fdd9ee634d6552442f59309d0132cb33a88c4445b3a90171c"
     },
     "1.1.0/sources/copies/registry-7.0.1.json": {
       "upstream": "conformance/registry/1.1.0/sources/copies/registry-7.0.1.json",
@@ -2630,6 +2647,10 @@
     "1.1.0/vectors/assemble-repository-userinfo/report.json": {
       "upstream": "conformance/registry/1.1.0/vectors/assemble-repository-userinfo/report.json",
       "sha256": "4cff6a677aa3c1035d55ff1c3e3db1bd0df5fe85a23be895be02cc188e87ad3f"
+    },
+    "1.1.0/vectors/assemble-scope-shared-every-earlier-listing/report.json": {
+      "upstream": "conformance/registry/1.1.0/vectors/assemble-scope-shared-every-earlier-listing/report.json",
+      "sha256": "a211e4c23efc66a98c4081022ae5c8da398b977875924ce5757506621884bd21"
     },
     "1.1.0/vectors/assemble-scope-widens/report.json": {
       "upstream": "conformance/registry/1.1.0/vectors/assemble-scope-widens/report.json",
