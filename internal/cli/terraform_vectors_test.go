@@ -286,8 +286,8 @@ func TestTerraformFactsSpecVectors(t *testing.T) {
 		t.Logf("not run: %s", reason)
 	}
 	t.Logf("%d batch rows and %d malformed declarations run; %d malformed declarations not run", batch, malformed, len(notRun))
-	if batch != 8 || malformed != 20 || len(notRun) != 16 {
-		t.Fatalf("%d batch rows, %d malformed declarations run and %d not run; the manifest at the pinned revision has 8 batch rows, and 36 malformed declarations of which 20 have a command line",
+	if batch != 10 || malformed != 21 || len(notRun) != 16 {
+		t.Fatalf("%d batch rows, %d malformed declarations run and %d not run; the manifest at the pinned revision has 10 batch rows, and 37 malformed declarations of which 21 have a command line",
 			batch, malformed, len(notRun))
 	}
 }
