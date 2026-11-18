@@ -102,7 +102,9 @@ jpack registry lock coverage --lock registry.lock.json \
   expected registry id and index requirement (`--registry-id`, `--require-index`) have no default
   and are never read from the lock: one not given is `LOCK-EXPECTED`. An index given for a lock
   that names none is `LOCK-INDEX-UNLOCKED`, and one not given for a lock that names one is
-  `LOCK-INDEX-MISSING`: never a skipped check.
+  `LOCK-INDEX-MISSING`: never a skipped check. Likewise, since a lock lists every emitter manifest
+  its writer was given (§7), an emitter given that the lock does not list, or one given for a lock
+  that names no emitters, is `LOCK-EMITTER-MISMATCH` at `/emitters` (§9, step 8), never ignored.
 - `coverage` says whether the lock covers a resolved registry (of the `--environment` given, and
   the one the lock names for it) or a generated file (its path, its mode as on disk and its
   digest, of `--file-source` in an assembled lock). Its report names no registry.
@@ -139,8 +141,7 @@ Where the text leaves a choice open and no row decides it, this reader reads it 
   first serial out of range, are `LOCK-FORM`;
 - an emitter manifest that is admitted but is not a valid emitter manifest is
   `LOCK-EMITTER-MISMATCH`, since no host check of it exits 0;
-- emitters given for a lock that names none are not compared, and a file's source is not
-  compared for a single registry's lock;
+- a file's source is not compared for a single registry's lock;
 - an index item that is not of its form is `LOCK-SOURCES-MISMATCH` at the lock's item.
 
 The pinned rows are in `internal/federation/testdata/1.1.0`, with their provenance. Every

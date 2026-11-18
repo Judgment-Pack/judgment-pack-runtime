@@ -62,8 +62,9 @@ func FuzzLock(f *testing.F) {
 
 // FuzzCheckLock checks a fuzzed lock against the single registry, its kinds
 // and an emitter manifest with its files: a check passes only for a lock
-// that names that registry, its kinds and its resolved digests, and names
-// no emitters or those the manifest's files are.
+// that names that registry, its kinds and its resolved digests, and the
+// emitter given with the manifest's files. A lock that names no emitters is
+// refused, since an emitter was given (§9, step 8).
 func FuzzCheckLock(f *testing.F) {
 	for _, name := range lockSeeds {
 		f.Add(testdataFile(f, name))
@@ -81,18 +82,14 @@ func FuzzCheckLock(f *testing.F) {
 		}},
 		Expect: platformExpect(),
 	}
-	withoutSerial := func(t *testing.T, data []byte, keep bool) map[string]any {
+	withoutSerial := func(t *testing.T, data []byte) map[string]any {
 		root, _ := registry.AdmitDocument(data, MaxLockBytes, "lockFormatVersion", LockFormatVersion, registry.Location{Document: DocumentLock})
 		if root == nil {
 			t.Fatalf("a lock that is not admitted: %s", data)
 		}
 		delete(root, "serial")
-		if !keep {
-			delete(root, "emitters")
-		}
 		return root
 	}
-	single := testdataFile(f, "locks/single-42.lock.json")
 	emitters := testdataFile(f, "locks/single-43-emitters.lock.json")
 	f.Fuzz(func(t *testing.T, data []byte) {
 		in := in
@@ -117,15 +114,8 @@ func FuzzCheckLock(f *testing.F) {
 		if !report.Valid {
 			return
 		}
-		got := withoutSerial(t, data, true)
-		if _, named := got["emitters"]; named {
-			if !registry.JSONEqual(got, withoutSerial(t, emitters, true)) {
-				t.Fatalf("a check passed a lock whose emitters are not the files': %s", data)
-			}
-			return
-		}
-		if !registry.JSONEqual(got, withoutSerial(t, single, false)) {
-			t.Fatalf("a check passed a lock that is not the registry's: %s", data)
+		if !registry.JSONEqual(withoutSerial(t, data), withoutSerial(t, emitters)) {
+			t.Fatalf("a check passed a lock that is not the registry's with the emitter given: %s", data)
 		}
 	})
 }

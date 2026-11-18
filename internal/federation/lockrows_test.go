@@ -399,6 +399,43 @@ func TestWriterInputs(t *testing.T) {
 	}
 }
 
+// TestCheckerRefusesAnEmitterNotLocked holds the checker to §§7 and 9: a
+// lock lists one item per emitter manifest its writer was given, so a
+// manifest given that the lock does not list, or one given for a lock that
+// names no emitters, differs from the lock and is LOCK-EMITTER-MISMATCH at
+// /emitters, never left uncompared.
+func TestCheckerRefusesAnEmitterNotLocked(t *testing.T) {
+	withEmitters := rowByID(t, "check-emitters")
+	checkInput := func(r row, emitters []federation.Emitter) federation.CheckInput {
+		in := federation.CheckInput{Lock: rowDocument(t, r.Lock), Registry: rowDocument(t, r.Registry), Emitters: emitters, Expect: rowExpect(r)}
+		for _, file := range r.Kinds {
+			in.Kinds = append(in.Kinds, rowDocument(t, file))
+		}
+		return in
+	}
+	another := func() []federation.Emitter {
+		emitters := rowEmitters(t, withEmitters)
+		other := emitters[0]
+		other.Path = "emitters/other.json"
+		return append(emitters, other)
+	}
+	for name, in := range map[string]federation.CheckInput{
+		"an emitter the lock does not list":     checkInput(withEmitters, another()),
+		"an emitter for a lock that names none": checkInput(rowByID(t, "check-single"), rowEmitters(t, withEmitters)),
+	} {
+		t.Run(name, func(t *testing.T) {
+			report, err := federation.CheckLock(in)
+			if err != nil {
+				t.Fatal(err)
+			}
+			want := federation.Location{Document: federation.DocumentLock, Pointer: "/emitters"}
+			if report.Valid || len(report.Diagnostics) != 1 || report.Diagnostics[0].Code != "LOCK-EMITTER-MISMATCH" || report.Diagnostics[0].Location != want {
+				t.Fatalf("valid %v, diagnostics %+v; want LOCK-EMITTER-MISMATCH at /emitters alone", report.Valid, report.Diagnostics)
+			}
+		})
+	}
+}
+
 var one64 int64 = 1
 
 // otherKey is a public key the trust rule admits that the signer set does
