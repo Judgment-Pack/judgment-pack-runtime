@@ -1,4 +1,4 @@
-# Registry federation: assembly, the index check and locks (proposed)
+# Registry federation: assembly, the index check, locks and signatures (proposed)
 
 **Status: proposed.** Registry format 1.1.0 is a proposed revision of the registry companion,
 not released, and nothing here is promised under `VERSIONING.md`. The commands and their output
@@ -9,10 +9,9 @@ Format 1.1.0 lets one registry be assembled from several sources: a standard, wh
 and states bounds, and repositories, which hold their own entries within those bounds. A
 federation manifest names each source, the repository identity and commit its bytes come from, the
 environments it serves, and the paths of its registry, its bounds and its kind declarations. This
-runtime builds the assembler, the index checker, the lock writer and the lock checker of the
-format (sections 1 to 9 and 12). The lock signature verifier (the lock signature, the serial
-record and verification, sections 10 and 11) is not built yet: nothing raises its
-`LOCK-SERIAL-*` codes, and no command here says who signed a lock.
+runtime builds every class of the format: the assembler, the index checker, the lock writer, the
+lock checker and the lock signature verifier (sections 1 to 12), with the commands that sign a
+lock and a source statement.
 
 ## Commands
 
@@ -107,15 +106,97 @@ jpack registry lock coverage --lock registry.lock.json \
   the one the lock names for it) or a generated file (its path, its mode as on disk and its
   digest, of `--file-source` in an assembled lock). Its report names no registry.
 - A check and coverage establish that bytes are the ones a lock names, not who wrote the lock:
-  that is verification, not built yet.
+  that is verification (below).
+
+## Signatures and verification
+
+```
+jpack registry lock sign --lock registry.lock.json --registry registry.json \
+  --kind kinds/database.json --kind kinds/db-role.json \
+  --registry-id <registry id> --require-index false \
+  --key <seed file> --public-key standard.pub
+
+jpack registry source sign --federation federation.json \
+  --source billing=<commit>=checkouts/billing \
+  --key <seed file> --public-key billing.pub --output billing.sig.json
+
+jpack registry lock verify --lock registry.lock.json \
+  --signature registry.lock.json.sig.json --keys expected-keys.json \
+  --registry-id <registry id> --require-index false \
+  --record-dir <records directory> --floor 1
+```
+
+- A signature document has five string members, written in code-point order as RFC 8785 bytes
+  and one line feed, and signs the text's message for one digest: a lock's digest, or a source
+  statement's (its repository, its commit, and each document's path and digest). A signature says
+  the key's holder signed that digest; it does not say the registry is right, reviewed or
+  current, or when it was signed.
+- `lock sign` first checks the lock as `lock check` does, with the same flags, and signs only a
+  lock that checks; otherwise it writes the check's report and exits 1. The document goes to
+  `<lock>.sig.json`, or to `--output`. `source sign` builds the statement of its one `--source`
+  from that source's own documents at its commit, each admitted as the assembler admits it; no
+  other source is read, so nothing here checks the assembly. Its document goes to `--output`.
+  Neither command writes a document over anything.
+- The seed is read from the file `--key` names, and from nothing else: no flag or environment
+  variable carries a key. It is held to the rules a trail's signing key is held to: named by its
+  real path with no symbolic link in it, one regular file with one name, on unix owned by the
+  user the runtime runs as and readable by nobody else, in directories nobody else can write
+  unless their sticky bit is set. On Windows a key's privacy cannot be checked, so no key signs
+  there. `--public-key` names the public key the seed must have, and a seed with another is
+  refused before anything is signed. Output and errors name a key by its identifier alone (the
+  first 32 hexadecimal characters of the SHA-256 of the public key), never the key or the seed.
+- `verify` follows the text's order: the expected inputs and the serial record; the lock
+  signature, checked against the expected key before the lock is parsed; the lock; its serial;
+  the index; each source signature, against the key the signer set names for its source and the
+  statement rebuilt from the index (never the lock's own statement member); then, with
+  `--registry`, the rest of the lock check, and coverage with `--resolved` or `--file`. Exit 0
+  when the lock is accepted and recorded, 1 when it is not.
+- `--keys` names the expected signer set, a JSON object `{"key": ..., "repositories": {...}}`:
+  the lock's (the standard owner's) key and, for an assembly, each repository identity's key,
+  64 lowercase hexadecimal characters each. It is given every time and never taken from a
+  document. Every key is held to the trust rule (canonical, not of small order), and a signature
+  is checked with Ed25519 as RFC 8032 states it, an S of the group order or more refused.
+- Signature documents are counted in the order given, the `--signature` documents first. Only
+  the first lock signature is read; every document beyond the lock's sources count plus one is
+  `LOCK-SIG-EXTRA` and is not parsed.
+
+### The serial record
+
+- `--record-dir` has no default. It holds one record per registry id, a file named by the
+  SHA-256 of the id: `{"digest","formatVersion":"1.0.0","registryId","serial"}` as RFC 8785
+  bytes and one line feed. With no record for the registry id, `--floor` must be given
+  (`LOCK-EXPECTED` otherwise): a floor of 1 accepts whatever lock comes first, trust on first use,
+  chosen by giving it.
+- Against a record, a lower serial is `LOCK-SERIAL-ROLLBACK`, and the same serial with another
+  digest `LOCK-SERIAL-CONFLICT`; a floor above the record's serial takes its place. A lock that
+  every step accepts is recorded; a refused lock changes no record, and the record of a lock
+  already recorded is not written again.
+- Recording is a compare and set. The verifier creates a lock file beside the record
+  (`<name>.lock`, exclusively) and waits at most five seconds for one another verifier holds;
+  then it reads the record again and applies the serial rule again, writes a temporary file and
+  syncs it, renames it over the record, syncs the directory, reads the record back and compares
+  it, and removes its lock file. Only then is the lock accepted.
+- A lock file that is still there after the wait is never removed by the runtime, since it cannot
+  tell a crashed verifier from a slow one: the verification is `LOCK-SERIAL-STATE`, and standard
+  error names the file. Remove it once no verifier is running.
+- `LOCK-SERIAL-STATE` is also a record that cannot be read, is not of its form or is of another
+  registry id, and a write or read back that fails; the lock is not accepted, and the reason is
+  written to standard error. The directory is created with mode 0700 and the record with 0600; a
+  directory or record its group or other users can write, a record that is a symbolic link or not
+  a regular file, and a directory that is a symbolic link, are refused the same way.
+- On Windows, a record's and its directory's permissions are not checked (their ACLs are not
+  read), and the directory is not synced, which Windows does not offer: the temporary file's bytes
+  are flushed before the rename, and the rename replaces the record in one step, but without
+  write-through, so a power loss just after it may leave the record as it was before. A floor no
+  lower than the last serial accepted covers that.
 
 ## Bounds
 
 Every input is read within a fixed bound, and a document over its bound is not parsed: a source's
 document, the manifest or the index is refused as `REG-DOC-SIZE`, and a known index or lock is
 an input error (see Readings). The bounds are the manifest and a bounds document 256 KiB each, a
-registry and an index 8 MiB, a kind declaration 256 KiB, a lock 1 MiB, a source signature 4 KiB,
-an emitter manifest 256 KiB and a generated file 16 MiB. A manifest names at
+registry and an index 8 MiB, a kind declaration 256 KiB, a lock 1 MiB, a lock or source signature
+4 KiB, a serial record 64 KiB, an emitter manifest 256 KiB and a generated file 16 MiB. A manifest names at
 most 256 sources, 4096 paths in all, 64 kind declarations per source and 32 environments; the
 known list holds at most 256 indexes and 256 locks. A bound lists at most 1024 values and 16
 patterns, and a `maxEntries` is at most 100000. A JSON document whose object repeats a member name
@@ -141,8 +222,15 @@ Where the text leaves a choice open and no row decides it, this reader reads it 
   `LOCK-EMITTER-MISMATCH`, since no host check of it exits 0;
 - emitters given for a lock that names none are not compared, and a file's source is not
   compared for a single registry's lock;
-- an index item that is not of its form is `LOCK-SOURCES-MISMATCH` at the lock's item.
+- an index item that is not of its form is `LOCK-SOURCES-MISMATCH` at the lock's item;
+- a verifier reads a signature document's members before any number in it: a number is a member
+  of the wrong type (an unknown member holding one is `LOCK-SIG-MEMBER`), never a document that
+  cannot be admitted;
+- `verify` reads the bytes of every signature document it is given, each within 4 KiB, and parses
+  none beyond the count;
+- a record that is of another registry id than the one its name is the hash of is
+  `LOCK-SERIAL-STATE`.
 
-The pinned rows are in `internal/federation/testdata/1.1.0`, with their provenance. Every
-assembler, index-checker, lock-writer and lock-checker row runs in that package and through the
-commands; the lock signature verifier's rows are listed there as pending.
+The pinned rows are in `internal/federation/testdata/1.1.0`, with their provenance. Every row of
+every class runs in that package and through the commands, a verifier row with its record in a
+directory of its own.
