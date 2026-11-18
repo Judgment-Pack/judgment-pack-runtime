@@ -18,10 +18,10 @@ import (
 // is: TestRows fails when a listed class is run, and when a class of the
 // rows is neither listed nor run. scripts/check-mutation-table.py reads it
 // too: a code it lists as pending is allowed only while a class is.
-var pendingClasses = []string{"index-checker", "lock-writer", "lock-checker", "lock-signature-verifier"}
+var pendingClasses = []string{"lock-writer", "lock-checker", "lock-signature-verifier"}
 
 // rowCounts are how many rows each class run here has.
-var rowCounts = map[string]int{"assembler": 46}
+var rowCounts = map[string]int{"assembler": 46, "index-checker": 5}
 
 type rowSource struct {
 	Commit string            `json:"commit"`
@@ -162,11 +162,20 @@ func runAssembler(t *testing.T, r row) {
 	}
 }
 
+func runIndexChecker(t *testing.T, r row) {
+	report, err := federation.CheckIndex(rowInput(t, r), registry.Document{Data: readRowFile(t, r.Index)})
+	if err != nil {
+		t.Fatal(err)
+	}
+	compareReport(t, r, report)
+}
+
 // TestRows runs every row of each class this package builds, and holds the
 // list of those it does not build yet.
 func TestRows(t *testing.T) {
 	implemented := map[string]func(*testing.T, row){
-		"assembler": runAssembler,
+		"assembler":     runAssembler,
+		"index-checker": runIndexChecker,
 	}
 	m := readRows(t)
 	run := map[string]int{}
