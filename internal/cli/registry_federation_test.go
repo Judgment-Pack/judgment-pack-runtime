@@ -404,3 +404,29 @@ func TestRegistryKnownNotAdmitted(t *testing.T) {
 		}
 	}
 }
+
+// TestRegistryKnownLimitReadsNoSource holds FED-KNOWN-LIMIT to come before
+// any read: with every source directory and every known file absent, a list
+// over its limit is still the assembly's refusal, not a read error.
+func TestRegistryKnownLimitReadsNoSource(t *testing.T) {
+	for _, id := range []string{"assemble-known-limit", "assemble-known-lock-limit"} {
+		t.Run(id, func(t *testing.T) {
+			r := federationRowNamed(t, "assembler", id)
+			args := federationArguments(t, r)
+			absent := t.TempDir()
+			for i := 0; i+1 < len(args); i++ {
+				switch args[i] {
+				case "--source":
+					parts := strings.SplitN(args[i+1], "=", 3)
+					args[i+1] = parts[0] + "=" + parts[1] + "=" + filepath.Join(absent, "source-"+parts[0])
+				case "--known-index", "--known-lock":
+					args[i+1] = filepath.Join(absent, fmt.Sprintf("known-%d.json", i))
+				}
+			}
+			code, stdout, _ := runTest(t, append([]string{"registry", "assemble"}, args...), "")
+			if code != 1 || !strings.Contains(stdout, `"FED-KNOWN-LIMIT"`) {
+				t.Fatalf("exit=%d, want 1 with FED-KNOWN-LIMIT; stdout=%q", code, stdout)
+			}
+		})
+	}
+}

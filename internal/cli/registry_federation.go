@@ -199,6 +199,30 @@ func (a *App) federationInput(name string, inputs *federationInputs, index strin
 		return federation.Input{}, failure
 	}
 	in := federation.Input{Manifest: manifest, Sources: map[string]federation.SourceInput{}}
+	if len(inputs.knownIndex) > federation.MaxKnown || len(inputs.knownLocks) > federation.MaxKnown {
+		// FED-KNOWN-LIMIT refuses the assembly before any source, or any
+		// document of the list, is read (§4).
+		in.Known = federation.Known{Indexes: make([]registry.Document, len(inputs.knownIndex)), Locks: make([]registry.Document, len(inputs.knownLocks))}
+		return in, nil
+	}
+	known := func(paths []string, limit int, what string) ([]registry.Document, error) {
+		out := []registry.Document{}
+		for _, path := range paths {
+			document, failure := a.federationDocument(name, path, limit, what)
+			if failure != nil {
+				return nil, failure
+			}
+			out = append(out, document)
+		}
+		return out, nil
+	}
+	var err error
+	if in.Known.Indexes, err = known(inputs.knownIndex, federation.MaxIndexBytes, "known index"); err != nil {
+		return federation.Input{}, err
+	}
+	if in.Known.Locks, err = known(inputs.knownLocks, federation.MaxLockBytes, "known lock"); err != nil {
+		return federation.Input{}, err
+	}
 	paths := map[string][]federation.Path{}
 	if !manifest.Oversize {
 		paths = federation.SourcePaths(manifest.Data)
@@ -223,28 +247,6 @@ func (a *App) federationInput(name string, inputs *federationInputs, index strin
 			root.Close()
 		}
 		in.Sources[sourceName] = federation.SourceInput{Commit: s.commit, Files: files}
-	}
-	known := func(paths []string, limit int, what string) ([]registry.Document, error) {
-		out := []registry.Document{}
-		if len(paths) > federation.MaxKnown {
-			// FED-KNOWN-LIMIT refuses the list before any of it is read.
-			return make([]registry.Document, len(paths)), nil
-		}
-		for _, path := range paths {
-			document, failure := a.federationDocument(name, path, limit, what)
-			if failure != nil {
-				return nil, failure
-			}
-			out = append(out, document)
-		}
-		return out, nil
-	}
-	var err error
-	if in.Known.Indexes, err = known(inputs.knownIndex, federation.MaxIndexBytes, "known index"); err != nil {
-		return federation.Input{}, err
-	}
-	if in.Known.Locks, err = known(inputs.knownLocks, federation.MaxLockBytes, "known lock"); err != nil {
-		return federation.Input{}, err
 	}
 	return in, nil
 }
