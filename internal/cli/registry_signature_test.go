@@ -222,8 +222,8 @@ func TestRegistrySignRefusesASeedFile(t *testing.T) {
 		public string
 		reason string
 	}{
-		{"group-readable", func(t *testing.T, key string) { chmod(t, key, 0o640) }, "", "readable"},
-		{"world-readable", func(t *testing.T, key string) { chmod(t, key, 0o604) }, "", "readable"},
+		{"group-readable", func(t *testing.T, key string) { chmod(t, key, 0o640) }, "", audit.ErrKeyTooOpen.Error()},
+		{"world-readable", func(t *testing.T, key string) { chmod(t, key, 0o604) }, "", audit.ErrKeyTooOpen.Error()},
 		{"not regular", func(t *testing.T, key string) {
 			if err := os.Remove(key); err != nil {
 				t.Fatal(err)
@@ -231,7 +231,7 @@ func TestRegistrySignRefusesASeedFile(t *testing.T) {
 			if err := os.Mkdir(key, 0o700); err != nil {
 				t.Fatal(err)
 			}
-		}, "", "regular"},
+		}, "", audit.ErrKeyNotRegular.Error()},
 		{"link", func(t *testing.T, key string) {
 			target := key + ".target"
 			if err := os.Rename(key, target); err != nil {
@@ -240,8 +240,8 @@ func TestRegistrySignRefusesASeedFile(t *testing.T) {
 			if err := os.Symlink(target, key); err != nil {
 				t.Fatal(err)
 			}
-		}, "", "link"},
-		{"another key", func(*testing.T, string) {}, registryTestPublic(t, registryTestSeeds[2]), "expected"},
+		}, "", audit.ErrKeyThroughLink.Error()},
+		{"another key", func(*testing.T, string) {}, registryTestPublic(t, registryTestSeeds[2]), audit.ErrKeyNotExpected.Error()},
 	} {
 		t.Run(c.label, func(t *testing.T) {
 			public := c.public
