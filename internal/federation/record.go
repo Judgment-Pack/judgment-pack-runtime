@@ -31,7 +31,7 @@ import (
 // file's own version, not the text's. The directory is created 0700 and each
 // file 0600; on unix a directory or a record that its group or other users
 // can write is refused, as is a record that is not one regular file, or a
-// directory that is a link.
+// directory that is a link (on Windows, a junction too).
 //
 // A record is written by compare and set: a lock file created beside the
 // record with O_EXCL is held while the record is read again, the lock is held
@@ -133,7 +133,8 @@ func (s *RecordStore) directory() (exists bool, problem *RecordError) {
 		return false, nil
 	case err != nil:
 		return false, &RecordError{Path: s.dir, Reason: "the record directory could not be read"}
-	case info.Mode()&fs.ModeSymlink != 0 || !info.IsDir():
+	case fssecure.LinkLike(info) || !info.IsDir():
+		// A junction is held to the rule a symbolic link is.
 		return false, &RecordError{Path: s.dir, Reason: "the record directory is not a directory, or is a link"}
 	case recordModesChecked && info.Mode().Perm()&0o022 != 0:
 		return false, &RecordError{Path: s.dir, Reason: "the record directory can be written by its group or by other users"}
