@@ -22,8 +22,9 @@ import (
 const vectorsDir = "testdata/1.0.0"
 
 // The revision the vectors are pinned to: the Spec commit that merges the pull
-// request that adds them, until the terraform-file-v1.0.0 tag is published.
-const vectorsRevision = "8354daaeed00f7887c494a1aa4d37f9e6a7a489e"
+// request that last changed them, until the terraform-file-v1.0.0 tag is
+// published.
+const vectorsRevision = "48fc63539b619f91a64fdcb60fc18a8afeeb01a4"
 
 type generateRule struct {
 	Template string `json:"template"`
@@ -354,8 +355,8 @@ func TestSpecVectors(t *testing.T) {
 		})
 	}
 	t.Logf("%d rows accepted and %d refused as expected; %d with a malformed declaration and %d batch rows run in internal/cli", accepted, refused, malformed, batch)
-	if len(m.Vectors) != 188 || accepted != 70 || refused != 74 || malformed != 36 || batch != 8 {
-		t.Fatalf("%d of %d rows accepted, %d refused, %d malformed, %d batch; the manifest at the pinned revision has 188: 70, 74, 36 and 8",
+	if len(m.Vectors) != 206 || accepted != 75 || refused != 84 || malformed != 37 || batch != 10 {
+		t.Fatalf("%d of %d rows accepted, %d refused, %d malformed, %d batch; the manifest at the pinned revision has 206: 75, 84, 37 and 10",
 			accepted, len(m.Vectors), refused, malformed, batch)
 	}
 }

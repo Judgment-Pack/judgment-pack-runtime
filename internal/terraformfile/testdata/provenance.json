@@ -1,8 +1,8 @@
 {
   "repository": "https://github.com/Judgment-Pack/judgment-pack-spec",
   "release": null,
-  "pullRequest": "https://github.com/Judgment-Pack/judgment-pack-spec/pull/373",
-  "revision": "8354daaeed00f7887c494a1aa4d37f9e6a7a489e",
+  "pullRequest": "https://github.com/Judgment-Pack/judgment-pack-spec/pull/376",
+  "revision": "48fc63539b619f91a64fdcb60fc18a8afeeb01a4",
   "files": {
     "1.0.0/codes.json": {
       "upstream": "conformance/terraform-file/1.0.0/codes.json",
@@ -148,6 +148,10 @@
       "upstream": "conformance/terraform-file/1.0.0/declarations/declaration-types-duplicate.json",
       "sha256": "6e8870dfb0664e71ee3f16e6e57dfd2d6a9039c4c47fa8a39d01dcc0181aff39"
     },
+    "1.0.0/declarations/declaration-types-empty-name.json": {
+      "upstream": "conformance/terraform-file/1.0.0/declarations/declaration-types-empty-name.json",
+      "sha256": "4ec249dd8d6b24aeecd6694690b5599400c5567e353fdd47b156ed7a4c8232da"
+    },
     "1.0.0/declarations/declaration-types-empty.json": {
       "upstream": "conformance/terraform-file/1.0.0/declarations/declaration-types-empty.json",
       "sha256": "6da3d22d80bbc440e350a742572cc26f29250e11041651ced20c77aa64bc3dc3"
@@ -176,6 +180,10 @@
       "upstream": "conformance/terraform-file/1.0.0/declarations/plan-actions-none.json",
       "sha256": "8a9be3edac97fd9fec87986e5ff0ef4a662bff2efc06fa17ffd1eddf932e617e"
     },
+    "1.0.0/declarations/plan-actions-repeat.json": {
+      "upstream": "conformance/terraform-file/1.0.0/declarations/plan-actions-repeat.json",
+      "sha256": "61e3f7ab571047d3ba6c039da7fb2c2b2751bf79e725d40facd1d17276c70510"
+    },
     "1.0.0/declarations/plan-actions-update-no-op.json": {
       "upstream": "conformance/terraform-file/1.0.0/declarations/plan-actions-update-no-op.json",
       "sha256": "5ffedf39b7adef50f675d0ceda1a6edb5ad602dd84fd3a222477a60ce2903fff"
@@ -199,6 +207,10 @@
     "1.0.0/declarations/plan.json": {
       "upstream": "conformance/terraform-file/1.0.0/declarations/plan.json",
       "sha256": "3f14219e054e614ab88a9dfb0a86be313613dd9187418bdd8c6e0deb1628f51c"
+    },
+    "1.0.0/declarations/state-batch-archive.json": {
+      "upstream": "conformance/terraform-file/1.0.0/declarations/state-batch-archive.json",
+      "sha256": "1be309ba625d3c711087baaa6a49abe652d0aa67b2bc0d0e9b123381fc7216c8"
     },
     "1.0.0/declarations/state-batch-none.json": {
       "upstream": "conformance/terraform-file/1.0.0/declarations/state-batch-none.json",
@@ -282,7 +294,7 @@
     },
     "1.0.0/manifest.json": {
       "upstream": "conformance/terraform-file/1.0.0/manifest.json",
-      "sha256": "b36a8ff7ea1cd6d213c5329a4d88307bcfdf2ba5714b263d1848784bb19add80"
+      "sha256": "47cb7978196ba309423257726470d0c309b2d2e6c1d7a5142a006e9ba22df4e8"
     },
     "1.0.0/vectors/batch/batch-deposed-id-256.expected.jsonl": {
       "upstream": "conformance/terraform-file/1.0.0/vectors/batch/batch-deposed-id-256.expected.jsonl",
@@ -296,6 +308,10 @@
       "upstream": "conformance/terraform-file/1.0.0/vectors/batch/batch-empty.expected.jsonl",
       "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
     },
+    "1.0.0/vectors/batch/batch-facts-document-limit.expected.json": {
+      "upstream": "conformance/terraform-file/1.0.0/vectors/batch/batch-facts-document-limit.expected.json",
+      "sha256": "3389e49aa652c1c73a3c2e545e1f27af8c13d594dc1b3b15928c2005c2438560"
+    },
     "1.0.0/vectors/batch/batch-id-256.expected.jsonl": {
       "upstream": "conformance/terraform-file/1.0.0/vectors/batch/batch-id-256.expected.jsonl",
       "sha256": "8160294add2fd3edf1d96a4d28ac2948ea5c94c2b766aaffb8f9c20b9eba62a6"
@@ -303,6 +319,10 @@
     "1.0.0/vectors/batch/batch-id-257-beside-bulky.expected.json": {
       "upstream": "conformance/terraform-file/1.0.0/vectors/batch/batch-id-257-beside-bulky.expected.json",
       "sha256": "40e00f32e55eb14235e76a8182dcaf6ae70149aca53a104f9205fd2abb6b8139"
+    },
+    "1.0.0/vectors/batch/batch-id-empty.expected.json": {
+      "upstream": "conformance/terraform-file/1.0.0/vectors/batch/batch-id-empty.expected.json",
+      "sha256": "a334c515bc6b213db6a79a5d3ba1333b25725f69fb9038bbbb834c0e91f9574d"
     },
     "1.0.0/vectors/batch/batch-plan.expected.jsonl": {
       "upstream": "conformance/terraform-file/1.0.0/vectors/batch/batch-plan.expected.jsonl",
@@ -331,6 +351,10 @@
     "1.0.0/vectors/batch/id-257-beside-bulky.template.json": {
       "upstream": "conformance/terraform-file/1.0.0/vectors/batch/id-257-beside-bulky.template.json",
       "sha256": "41c121f429b91c2a88cbb8631d060bb5d662b4a8b47ea62e1d50df9329faf70a"
+    },
+    "1.0.0/vectors/batch/id-empty.json": {
+      "upstream": "conformance/terraform-file/1.0.0/vectors/batch/id-empty.json",
+      "sha256": "c32c99d00650729f65d5b13d11b3a29aa939ae82cb6a48fdf5a7d1df2472ec4a"
     },
     "1.0.0/vectors/declarations/declaration-actions-empty-on-state.expected.json": {
       "upstream": "conformance/terraform-file/1.0.0/vectors/declarations/declaration-actions-empty-on-state.expected.json",
@@ -470,6 +494,10 @@
     },
     "1.0.0/vectors/declarations/declaration-types-duplicate.expected.json": {
       "upstream": "conformance/terraform-file/1.0.0/vectors/declarations/declaration-types-duplicate.expected.json",
+      "sha256": "aecb023ba8391210c06ddceebe731fb304622f309cdd51bdb9511c789e82f7af"
+    },
+    "1.0.0/vectors/declarations/declaration-types-empty-name.expected.json": {
+      "upstream": "conformance/terraform-file/1.0.0/vectors/declarations/declaration-types-empty-name.expected.json",
       "sha256": "aecb023ba8391210c06ddceebe731fb304622f309cdd51bdb9511c789e82f7af"
     },
     "1.0.0/vectors/declarations/declaration-types-empty.expected.json": {
@@ -664,6 +692,14 @@
       "upstream": "conformance/terraform-file/1.0.0/vectors/document/plan-planned-values-array.json",
       "sha256": "bd6e69f64a6bfb40acde893537c75045cc40c7d81ae3eebecbf2013bca8624fa"
     },
+    "1.0.0/vectors/document/plan-resource-changes-null.expected.json": {
+      "upstream": "conformance/terraform-file/1.0.0/vectors/document/plan-resource-changes-null.expected.json",
+      "sha256": "0b1ea586d727028c820e8fe9c1a976a5a6fdb85f154094ba19de1c3b910e5102"
+    },
+    "1.0.0/vectors/document/plan-resource-changes-null.json": {
+      "upstream": "conformance/terraform-file/1.0.0/vectors/document/plan-resource-changes-null.json",
+      "sha256": "18a0bec362450947b7d86e944298364ce0fe14d463f487818563823914e21289"
+    },
     "1.0.0/vectors/document/plan-resource-changes-object.expected.json": {
       "upstream": "conformance/terraform-file/1.0.0/vectors/document/plan-resource-changes-object.expected.json",
       "sha256": "31a1ea57c674c036db2b432e7740a12b238e1923672185e6254e83469b2fd604"
@@ -671,6 +707,22 @@
     "1.0.0/vectors/document/plan-resource-changes-object.json": {
       "upstream": "conformance/terraform-file/1.0.0/vectors/document/plan-resource-changes-object.json",
       "sha256": "1d2c5822ecae6f5912507cce15c4a4d761eaec989bea5d16906ed3d0971f8ed2"
+    },
+    "1.0.0/vectors/document/resource-index-null.expected.json": {
+      "upstream": "conformance/terraform-file/1.0.0/vectors/document/resource-index-null.expected.json",
+      "sha256": "aa28fd6df6e6f6bf2f29c568ef191eaaa2ab83e6d54d7a478d6eb208476b1644"
+    },
+    "1.0.0/vectors/document/resource-index-null.json": {
+      "upstream": "conformance/terraform-file/1.0.0/vectors/document/resource-index-null.json",
+      "sha256": "36fa939d3b438615dec19250f5eeb8589ae7b0bd6b6d61c9a7e7b8597f9c5620"
+    },
+    "1.0.0/vectors/document/resource-name-number.expected.json": {
+      "upstream": "conformance/terraform-file/1.0.0/vectors/document/resource-name-number.expected.json",
+      "sha256": "d600a78550b0170f7abb9093da790e1de090a7e2b2c51a54600437468fedab6c"
+    },
+    "1.0.0/vectors/document/resource-name-number.json": {
+      "upstream": "conformance/terraform-file/1.0.0/vectors/document/resource-name-number.json",
+      "sha256": "bde8383e6a9f59b54cd375d4ec2b53b9e028e5702feae457b96ae530a87cf142"
     },
     "1.0.0/vectors/document/state-read-as-plan.expected.json": {
       "upstream": "conformance/terraform-file/1.0.0/vectors/document/state-read-as-plan.expected.json",
@@ -1132,6 +1184,10 @@
       "upstream": "conformance/terraform-file/1.0.0/vectors/plans/plan-actions-empty.expected.json",
       "sha256": "3caf854d520a92c2b3b3b0f3efb398d69edbaa6b8d3c93f4bf79802944133470"
     },
+    "1.0.0/vectors/plans/plan-actions-repeat.expected.json": {
+      "upstream": "conformance/terraform-file/1.0.0/vectors/plans/plan-actions-repeat.expected.json",
+      "sha256": "d6c1760d8b9ff76c8fb8f8ccc279410efe5996dbb8466820615447eb5a7ff576"
+    },
     "1.0.0/vectors/plans/plan-actions-update-no-op.expected.json": {
       "upstream": "conformance/terraform-file/1.0.0/vectors/plans/plan-actions-update-no-op.expected.json",
       "sha256": "1545c49588386e9baa1046722cc042b4234bd8f74c77dfb07f52ca3cac440675"
@@ -1148,13 +1204,25 @@
       "upstream": "conformance/terraform-file/1.0.0/vectors/plans/plan-no-resource-changes.expected.json",
       "sha256": "63922e7dd67343a2e52ceb0da6576e813ec644eb54bcadeb06225afe6d27680f"
     },
+    "1.0.0/vectors/plans/plan-resource-changes-empty.expected.json": {
+      "upstream": "conformance/terraform-file/1.0.0/vectors/plans/plan-resource-changes-empty.expected.json",
+      "sha256": "0877e7025b271c8e4563bf91a3b6b8dbbf2c370f2fa829486fd58b24551f1478"
+    },
     "1.0.0/vectors/plans/plan-unknown-nested.expected.json": {
       "upstream": "conformance/terraform-file/1.0.0/vectors/plans/plan-unknown-nested.expected.json",
       "sha256": "bb73ea9df0c29dfbe8966ad2da90c88a1f93bbe7252812a392f58d844c911e12"
     },
+    "1.0.0/vectors/plans/resource-changes-empty.json": {
+      "upstream": "conformance/terraform-file/1.0.0/vectors/plans/resource-changes-empty.json",
+      "sha256": "6c9317c922b327f3d3011917ec5bc9145ffa0e0812117db7b8d8fd1bf1d5270e"
+    },
     "1.0.0/vectors/plans/unknown.json": {
       "upstream": "conformance/terraform-file/1.0.0/vectors/plans/unknown.json",
       "sha256": "1bd57de485c9b7d3a0c5ca970499a32a63d1501141b2e570278af316339e9b88"
+    },
+    "1.0.0/vectors/selection/mode-other.json": {
+      "upstream": "conformance/terraform-file/1.0.0/vectors/selection/mode-other.json",
+      "sha256": "80144fa76c2c5a4e02dde03a59396c9398a91702d689ec92b3bb6c761438e070"
     },
     "1.0.0/vectors/selection/select-address-prefix-only.expected.json": {
       "upstream": "conformance/terraform-file/1.0.0/vectors/selection/select-address-prefix-only.expected.json",
@@ -1195,6 +1263,10 @@
     "1.0.0/vectors/selection/select-max-2.expected.json": {
       "upstream": "conformance/terraform-file/1.0.0/vectors/selection/select-max-2.expected.json",
       "sha256": "338254c42f0ff35fb652f5c285eced8c9d896de5d9d6d6afc9fdb957c8dea6bb"
+    },
+    "1.0.0/vectors/selection/select-mode-other.expected.json": {
+      "upstream": "conformance/terraform-file/1.0.0/vectors/selection/select-mode-other.expected.json",
+      "sha256": "8eb466ec9a9528d79fee4f743651a1711483995025e340a8615da46f151e061d"
     },
     "1.0.0/vectors/selection/select-several-types.expected.json": {
       "upstream": "conformance/terraform-file/1.0.0/vectors/selection/select-several-types.expected.json",
@@ -1436,6 +1508,18 @@
       "upstream": "conformance/terraform-file/1.0.0/vectors/size/two-bytes.json",
       "sha256": "44136fa355b3678a1146ad16f7e8649e94fb4fc21fe77e8310c060f61caaff8a"
     },
+    "1.0.0/vectors/state/child-module-no-address.json": {
+      "upstream": "conformance/terraform-file/1.0.0/vectors/state/child-module-no-address.json",
+      "sha256": "78d85140b0bb9a1e70ab49e28a4e719ca8db37edf3b885327025875d38f2b8a0"
+    },
+    "1.0.0/vectors/state/child-module-string.json": {
+      "upstream": "conformance/terraform-file/1.0.0/vectors/state/child-module-string.json",
+      "sha256": "e4764a10c49927c702708f2b97133a3a66070a30c9330b46c610577464bc4566"
+    },
+    "1.0.0/vectors/state/child-modules-object.json": {
+      "upstream": "conformance/terraform-file/1.0.0/vectors/state/child-modules-object.json",
+      "sha256": "d9d5eb7ae9e17d944f7a2466918e0add0341c97b0535a616d54035a01be1f727"
+    },
     "1.0.0/vectors/state/no-values.json": {
       "upstream": "conformance/terraform-file/1.0.0/vectors/state/no-values.json",
       "sha256": "cd1456f8b14594e27729f23b796dac2df8ce3b3d5a57256fc4efe22babebed7d"
@@ -1443,6 +1527,38 @@
     "1.0.0/vectors/state/outputs-sensitive.json": {
       "upstream": "conformance/terraform-file/1.0.0/vectors/state/outputs-sensitive.json",
       "sha256": "0be2725ec98780aa0a6795f21838e3e4b0885549af1cdb3edf525874971c9ca0"
+    },
+    "1.0.0/vectors/state/resource-provider-name-missing.json": {
+      "upstream": "conformance/terraform-file/1.0.0/vectors/state/resource-provider-name-missing.json",
+      "sha256": "511768c1c7ababf062b6812bb678938b6ef34dbb6e63845cc7651db039b1bc0e"
+    },
+    "1.0.0/vectors/state/resource-string.json": {
+      "upstream": "conformance/terraform-file/1.0.0/vectors/state/resource-string.json",
+      "sha256": "51bf7fe52f8bfc14c86f2f7607008a160518db3bf51ada95709eaa3e86adab95"
+    },
+    "1.0.0/vectors/state/resource-type-empty.json": {
+      "upstream": "conformance/terraform-file/1.0.0/vectors/state/resource-type-empty.json",
+      "sha256": "ee6512f08b05f81bc5632ebee473ac0701bcbbda53fd487dcaf6eb79d75a62f3"
+    },
+    "1.0.0/vectors/state/resources-object.json": {
+      "upstream": "conformance/terraform-file/1.0.0/vectors/state/resources-object.json",
+      "sha256": "433c779c2c405bbae2c300e9d3f01a55d6195e29cbb5e8e2bbbd62802f92d2fa"
+    },
+    "1.0.0/vectors/state/root-module-null.json": {
+      "upstream": "conformance/terraform-file/1.0.0/vectors/state/root-module-null.json",
+      "sha256": "d159059263bbc28ab35d222d27fe881efdfde9bc253f2e87c227d6b6fa0178f4"
+    },
+    "1.0.0/vectors/state/state-child-module-no-address.expected.json": {
+      "upstream": "conformance/terraform-file/1.0.0/vectors/state/state-child-module-no-address.expected.json",
+      "sha256": "3543c3ffe598a903902671578860fbfb43a51c1bed5484d7ee741dec1c9d6899"
+    },
+    "1.0.0/vectors/state/state-child-module-not-object.expected.json": {
+      "upstream": "conformance/terraform-file/1.0.0/vectors/state/state-child-module-not-object.expected.json",
+      "sha256": "1ab686099e13a098a7f3055f1288eff35f98d833e2e0241ef700a7d93b5ced19"
+    },
+    "1.0.0/vectors/state/state-child-modules-not-array.expected.json": {
+      "upstream": "conformance/terraform-file/1.0.0/vectors/state/state-child-modules-not-array.expected.json",
+      "sha256": "d135846e36852af92171da5e4468d1f7ed1a4060688886d19a565a2b22d95376"
     },
     "1.0.0/vectors/state/state-no-values.expected.json": {
       "upstream": "conformance/terraform-file/1.0.0/vectors/state/state-no-values.expected.json",
@@ -1452,6 +1568,26 @@
       "upstream": "conformance/terraform-file/1.0.0/vectors/state/state-outputs-not-read.expected.json",
       "sha256": "ab5f0e251050f86dc12746bd79b9ac145e833239831c2da1c297e4eb15f8bcc1"
     },
+    "1.0.0/vectors/state/state-resource-not-object.expected.json": {
+      "upstream": "conformance/terraform-file/1.0.0/vectors/state/state-resource-not-object.expected.json",
+      "sha256": "8fabb063245db6187f20210bf29ce5275ee065da70716d1971f5dbf11c011913"
+    },
+    "1.0.0/vectors/state/state-resource-provider-name-missing.expected.json": {
+      "upstream": "conformance/terraform-file/1.0.0/vectors/state/state-resource-provider-name-missing.expected.json",
+      "sha256": "0c4466855f1df981b8bb13a280a0d65943f9657465f760171317baf4e2c0bb7c"
+    },
+    "1.0.0/vectors/state/state-resource-type-empty.expected.json": {
+      "upstream": "conformance/terraform-file/1.0.0/vectors/state/state-resource-type-empty.expected.json",
+      "sha256": "10e70d8b1012637c003c6309a500965adb1a424123339ded06740f7295b695f7"
+    },
+    "1.0.0/vectors/state/state-resources-not-array.expected.json": {
+      "upstream": "conformance/terraform-file/1.0.0/vectors/state/state-resources-not-array.expected.json",
+      "sha256": "8877945e3f46fb34ab84781fe8c7626ac1b0c32a3ec3bf02f840d39795761951"
+    },
+    "1.0.0/vectors/state/state-root-module-null.expected.json": {
+      "upstream": "conformance/terraform-file/1.0.0/vectors/state/state-root-module-null.expected.json",
+      "sha256": "224d22600955505a4a31e946a71b00eb18f68e273670b34a9005e1d964f0d737"
+    },
     "1.0.0/vectors/state/state-values-array.expected.json": {
       "upstream": "conformance/terraform-file/1.0.0/vectors/state/state-values-array.expected.json",
       "sha256": "76f032181361b44e10b77f058f65f10420bb1d29b64a764ad98e15f06661b033"
@@ -1459,6 +1595,10 @@
     "1.0.0/vectors/state/state-values-empty.expected.json": {
       "upstream": "conformance/terraform-file/1.0.0/vectors/state/state-values-empty.expected.json",
       "sha256": "c302b4e920218481dafe5340d5e3ac1561460c9b47aa287e3870f8057af030a5"
+    },
+    "1.0.0/vectors/state/state-values-null.expected.json": {
+      "upstream": "conformance/terraform-file/1.0.0/vectors/state/state-values-null.expected.json",
+      "sha256": "4740c028e28ffbf2d5bfd5f850ece2a107327913db56aba1607bff510a0ba54a"
     },
     "1.0.0/vectors/state/state-with-planned-values.expected.json": {
       "upstream": "conformance/terraform-file/1.0.0/vectors/state/state-with-planned-values.expected.json",
@@ -1475,6 +1615,10 @@
     "1.0.0/vectors/state/values-empty.json": {
       "upstream": "conformance/terraform-file/1.0.0/vectors/state/values-empty.json",
       "sha256": "5c721890f5f56a887fa5218f7f8b8e94dfdfc48b2034e37962356bb7b271a933"
+    },
+    "1.0.0/vectors/state/values-null.json": {
+      "upstream": "conformance/terraform-file/1.0.0/vectors/state/values-null.json",
+      "sha256": "0396835e02ff287c51b7ffa819d658a6dd85a12e2cc8f6af779a4f109c2a8dab"
     },
     "1.0.0/vectors/state/with-planned-values.json": {
       "upstream": "conformance/terraform-file/1.0.0/vectors/state/with-planned-values.json",
