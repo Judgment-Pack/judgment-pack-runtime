@@ -6,7 +6,9 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"syscall"
 	"testing"
+	"time"
 )
 
 // The directory is created 0700 and the record written 0600.
@@ -113,4 +115,39 @@ func snapshot(t *testing.T, dir string) string {
 		out.WriteString(entry.Name() + " " + info.Mode().String() + " " + string(data) + "\n")
 	}
 	return out.String()
+}
+
+// A record replaced by a pipe between its check and its open is refused at
+// once, never waited on, so no verification hangs holding the lock file.
+func TestRecordRefusesAPipeSwappedInBeforeTheOpen(t *testing.T) {
+	store := NewRecordStore(filepath.Join(t.TempDir(), "records"))
+	writeRecord(t, store, Record{3, digestA})
+	path, _, _ := store.paths(recordID)
+	t.Cleanup(StandInRecordHooksForTests(RecordHooks{BeforeOpen: func(path string) {
+		if err := os.Remove(path); err != nil {
+			t.Error(err)
+		}
+		if err := syscall.Mkfifo(path, 0o600); err != nil {
+			t.Error(err)
+		}
+	}}))
+	t.Cleanup(func() {
+		// Release a reader waiting on the pipe, whatever the read did.
+		if writer, err := os.OpenFile(path, os.O_WRONLY|syscall.O_NONBLOCK, 0); err == nil {
+			writer.Close()
+		}
+	})
+	done := make(chan *RecordError, 1)
+	go func() {
+		_, problem := store.read(recordID)
+		done <- problem
+	}()
+	select {
+	case problem := <-done:
+		if problem == nil || !strings.Contains(problem.Reason, "one regular file") {
+			t.Fatalf("%v", problem)
+		}
+	case <-time.After(10 * time.Second):
+		t.Fatal("the read waited on a pipe")
+	}
 }

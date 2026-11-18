@@ -16,6 +16,7 @@ import (
 	"time"
 
 	"github.com/Judgment-Pack/judgment-pack-runtime/internal/carrier"
+	"github.com/Judgment-Pack/judgment-pack-runtime/internal/fssecure"
 	"github.com/Judgment-Pack/judgment-pack-runtime/internal/jcs"
 )
 
@@ -80,10 +81,12 @@ func (e *RecordError) Error() string { return "serial record " + e.Path + ": " +
 
 // RecordHooks stand in for what a test cannot otherwise arrange: another
 // verifier writing between a verification's first read and its compare and
-// set, a write that fails between the temporary file and its rename, a
-// record that is not read back as written, and the lock file's wait.
+// set, a record replaced between its check and its open, a write that fails
+// between the temporary file and its rename, a record that is not read back
+// as written, and the lock file's wait.
 type RecordHooks struct {
 	BeforeRecording func()
+	BeforeOpen      func(path string)
 	BeforeRename    func() error
 	AfterRename     func(path string)
 	LockWait        time.Duration
@@ -168,9 +171,15 @@ func (s *RecordStore) read(registryID string) (*Record, *RecordError) {
 	case recordModesChecked && info.Mode().Perm()&0o022 != 0:
 		return refused("the record can be written by its group or by other users")
 	}
-	file, err := os.Open(path)
+	if hook := currentRecordHooks().BeforeOpen; hook != nil {
+		hook(path)
+	}
+	// Opened without following a link and without waiting for a writer,
+	// and held to be one regular file once open: a pipe put in the
+	// record's place since the check is refused, never waited on.
+	file, err := fssecure.OpenRegular(path)
 	if err != nil {
-		return refused("the record could not be read")
+		return refused("the record could not be opened as one regular file")
 	}
 	defer file.Close()
 	opened, err := file.Stat()
