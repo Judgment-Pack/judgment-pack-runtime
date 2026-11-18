@@ -18,7 +18,8 @@ The rows follow from the source; nobody lists the codes by hand. The codes are:
   conformance harness's);
 - the constants `Codes()` in `internal/terraformfile/codes.go` returns (the `TF-*` codes);
 - the keys of `Codes` in `internal/federation/codes.go`, the codes of registry format 1.1.0
-  (proposed): the `FED-*` codes, one row each, and the `LOCK-*` codes, which are pending (below);
+  (proposed): the `FED-*` codes and the `LOCK-*` codes of the lock writer and the lock checker,
+  one row each, and the serial record's `LOCK-SERIAL-*` codes, which are pending (below);
 - every constant in the non-test Go files of a `cmd/jpack-emit-*` package whose value is an `x-`
   code, the emitter's own diagnostic codes. `cmd/jpack-emit-go-facts` declares none: its refusals
   are fixed lines, not diagnostics, so it has no rows.
@@ -38,7 +39,7 @@ headings and comments. The check does not
 run the mutants; a reviewer does.
 
 Format 1.1.0 is built a conformance class at a time. The codes of the classes not built yet (the
-lock writer, the lock checker and the lock signature verifier, which raise the `LOCK-*` codes) are
+lock signature verifier, whose serial record alone raises the `LOCK-SERIAL-*` codes) are
 in a section of `internal/federation/codes.go` whose heading says pending, and
 `internal/federation/rows_test.go` lists those classes in `pendingClasses`, which `TestRows` holds
 to the classes it runs: a listed class that is built, or a class neither listed nor run, fails it.
@@ -70,9 +71,11 @@ was pending. The probes hold each of these.
   and the comment of a constant that holds a code (the `TF-*` codes, `FACTS-ID-LIMIT`). No
   section or comment says provisional: the registry companion's codes are released on
   `registry-v1.0.0`, the terraform-file companion's on `terraform-file-v1.0.0`, and the RFCs' are
-  the RFCs', so every `REG-*`, `REF-*`, `FACTS-*` and `TF-*` row is `no`. The `FED-*` codes are
-  the registry companion's 1.1.0 codes, proposed there and not this runtime's own, so they are `no`
-  too.
+  the RFCs', so every `REG-*`, `REF-*`, `FACTS-*` and `TF-*` row is `no`. The `FED-*` and `LOCK-*`
+  codes are the registry companion's 1.1.0 codes, proposed there and not this runtime's own, so
+  they are `no` too. A source signature code no writer row raises has a case of
+  `TestEveryCodeIsRaisedByARow` that edits a writer row's inputs (a signature document the rows
+  signed, or the signer set), since no key signs anything in this module's tests.
 
 | code | severity | package | test | mutant site | mutant | provisional |
 |---|---|---|---|---|---|---|
@@ -237,6 +240,34 @@ was pending. The probes hold each of these.
 | `FED-BOUND-ENTRIES` | error | `./internal/federation` | `TestEveryCodeIsRaisedByARow/FED-BOUND-ENTRIES` | `internal/federation/boundscheck.go:entryCounts` | every `"FED-BOUND-ENTRIES"` becomes `"FED-VALUE-BOUND"` | no |
 | `FED-VALUE-BOUND` | error | `./internal/federation` | `TestEveryCodeIsRaisedByARow/FED-VALUE-BOUND` | `internal/federation/boundscheck.go:values` | every `"FED-VALUE-BOUND"` becomes `"FED-BOUND-ENTRIES"` | no |
 | `FED-INDEX-MISMATCH` | error | `./internal/federation` | `TestEveryCodeIsRaisedByARow/FED-INDEX-MISMATCH` | `internal/federation/index.go:CheckIndex` | every `"FED-INDEX-MISMATCH"` becomes `"FED-MANIFEST"` | no |
+| `LOCK-EXPECTED` | error | `./internal/federation` | `TestEveryCodeIsRaisedByARow/LOCK-EXPECTED` | `internal/federation/lockcheck.go:CheckLock` | every `"LOCK-EXPECTED"` becomes `"LOCK-FORM"` | no |
+| `LOCK-FORM` | error | `./internal/federation` | `TestEveryCodeIsRaisedByARow/LOCK-FORM` | `internal/federation/lock.go:readLock` | every `"LOCK-FORM"` becomes `"LOCK-NOT-CANONICAL"` | no |
+| `LOCK-NOT-CANONICAL` | error | `./internal/federation` | `TestEveryCodeIsRaisedByARow/LOCK-NOT-CANONICAL` | `internal/federation/lock.go:readLock` | every `"LOCK-NOT-CANONICAL"` becomes `"LOCK-FORM"` | no |
+| `LOCK-UNEXPECTED-REGISTRY` | error | `./internal/federation` | `TestEveryCodeIsRaisedByARow/LOCK-UNEXPECTED-REGISTRY` | `internal/federation/lock.go:readLock` | every `"LOCK-UNEXPECTED-REGISTRY"` becomes `"LOCK-EXPECTED"` | no |
+| `LOCK-INDEX-REQUIRED` | error | `./internal/federation` | `TestEveryCodeIsRaisedByARow/LOCK-INDEX-REQUIRED` | `internal/federation/lock.go:readLock` | every `"LOCK-INDEX-REQUIRED"` becomes `"LOCK-INDEX-MISSING"` | no |
+| `LOCK-REGISTRY-INVALID` | error | `./internal/federation` | `TestEveryCodeIsRaisedByARow/LOCK-REGISTRY-INVALID` | `internal/federation/lockcheck.go:CheckLock` | every `"LOCK-REGISTRY-INVALID"` becomes `"LOCK-REGISTRY-MISMATCH"` | no |
+| `LOCK-REGISTRY-MISMATCH` | error | `./internal/federation` | `TestEveryCodeIsRaisedByARow/LOCK-REGISTRY-MISMATCH` | `internal/federation/lockcheck.go:checkRegistry` | every `"LOCK-REGISTRY-MISMATCH"` becomes `"LOCK-KINDS-MISMATCH"` | no |
+| `LOCK-KINDS-MISMATCH` | error | `./internal/federation` | `TestEveryCodeIsRaisedByARow/LOCK-KINDS-MISMATCH` | `internal/federation/lockcheck.go:checkKinds` | every `"LOCK-KINDS-MISMATCH"` becomes `"LOCK-REGISTRY-MISMATCH"` | no |
+| `LOCK-RESOLVED-MISMATCH` | error | `./internal/federation` | `TestEveryCodeIsRaisedByARow/LOCK-RESOLVED-MISMATCH` | `internal/federation/lockcheck.go:checkResolved` | every `"LOCK-RESOLVED-MISMATCH"` becomes `"LOCK-KINDS-MISMATCH"` | no |
+| `LOCK-INDEX-MISSING` | error | `./internal/federation` | `TestEveryCodeIsRaisedByARow/LOCK-INDEX-MISSING` | `internal/federation/lockcheck.go:checkIndex` | every `"LOCK-INDEX-MISSING"` becomes `"LOCK-INDEX-REQUIRED"` | no |
+| `LOCK-INDEX-MISMATCH` | error | `./internal/federation` | `TestEveryCodeIsRaisedByARow/LOCK-INDEX-MISMATCH` | `internal/federation/lockcheck.go:checkIndex` | every `"LOCK-INDEX-MISMATCH"` becomes `"LOCK-INDEX-UNLOCKED"` | no |
+| `LOCK-INDEX-UNLOCKED` | error | `./internal/federation` | `TestEveryCodeIsRaisedByARow/LOCK-INDEX-UNLOCKED` | `internal/federation/lockcheck.go:checkIndex` | every `"LOCK-INDEX-UNLOCKED"` becomes `"LOCK-INDEX-MISMATCH"` | no |
+| `LOCK-SOURCES-MISMATCH` | error | `./internal/federation` | `TestEveryCodeIsRaisedByARow/LOCK-SOURCES-MISMATCH` | `internal/federation/lockcheck.go:checkIndex` | every `"LOCK-SOURCES-MISMATCH"` becomes `"LOCK-INDEX-MISMATCH"` | no |
+| `LOCK-EMITTER-MISSING` | error | `./internal/federation` | `TestEveryCodeIsRaisedByARow/LOCK-EMITTER-MISSING` | `internal/federation/lockcheck.go:checkEmitters` | every `"LOCK-EMITTER-MISSING"` becomes `"LOCK-EMITTER-MISMATCH"` | no |
+| `LOCK-EMITTER-MISMATCH` | error | `./internal/federation` | `TestEveryCodeIsRaisedByARow/LOCK-EMITTER-MISMATCH` | `internal/federation/lockcheck.go:checkEmitters` | every `"LOCK-EMITTER-MISMATCH"` becomes `"LOCK-EMITTER-MISSING"` | no |
+| `LOCK-NOT-COVERED` | error | `./internal/federation` | `TestEveryCodeIsRaisedByARow/LOCK-NOT-COVERED` | `internal/federation/lockcheck.go:Coverage` | every `"LOCK-NOT-COVERED"` becomes `"LOCK-EXPECTED"` | no |
+| `LOCK-SIG-EXPECTED-KEY` | error | `./internal/federation` | `TestEveryCodeIsRaisedByARow/LOCK-SIG-EXPECTED-KEY` | `internal/federation/sourcesig.go:signerProblems` | every `"LOCK-SIG-EXPECTED-KEY"` becomes `"LOCK-EXPECTED"` | no |
+| `LOCK-SIG-MISSING` | error | `./internal/federation` | `TestEveryCodeIsRaisedByARow/LOCK-SIG-MISSING` | `internal/federation/sourcesig.go:sources` | every `"LOCK-SIG-MISSING"` becomes `"LOCK-SIG-EXTRA"` | no |
+| `LOCK-SIG-EXTRA` | error | `./internal/federation` | `TestEveryCodeIsRaisedByARow/LOCK-SIG-EXTRA` | `internal/federation/sourcesig.go:sources` | every `"LOCK-SIG-EXTRA"` becomes `"LOCK-SIG-MISSING"` | no |
+| `LOCK-SIG-DOCUMENT` | error | `./internal/federation` | `TestEveryCodeIsRaisedByARow/LOCK-SIG-DOCUMENT` | `internal/federation/sourcesig.go:readSourceSignature` | every `"LOCK-SIG-DOCUMENT"` becomes `"LOCK-SIG-MEMBER"` | no |
+| `LOCK-SIG-VERSION` | error | `./internal/federation` | `TestEveryCodeIsRaisedByARow/LOCK-SIG-VERSION` | `internal/federation/sourcesig.go:readSourceSignature` | every `"LOCK-SIG-VERSION"` becomes `"LOCK-SIG-MEMBER"` | no |
+| `LOCK-SIG-MEMBER` | error | `./internal/federation` | `TestEveryCodeIsRaisedByARow/LOCK-SIG-MEMBER` | `internal/federation/sourcesig.go:readSourceSignature` | every `"LOCK-SIG-MEMBER"` becomes `"LOCK-SIG-FORM"` | no |
+| `LOCK-SIG-ALGORITHM` | error | `./internal/federation` | `TestEveryCodeIsRaisedByARow/LOCK-SIG-ALGORITHM` | `internal/federation/sourcesig.go:readSourceSignature` | every `"LOCK-SIG-ALGORITHM"` becomes `"LOCK-SIG-FORM"` | no |
+| `LOCK-SIG-PUBLIC-KEY` | error | `./internal/federation` | `TestEveryCodeIsRaisedByARow/LOCK-SIG-PUBLIC-KEY` | `internal/federation/sourcesig.go:readSourceSignature` | every `"LOCK-SIG-PUBLIC-KEY"` becomes `"LOCK-SIG-FORM"` | no |
+| `LOCK-SIG-FORM` | error | `./internal/federation` | `TestEveryCodeIsRaisedByARow/LOCK-SIG-FORM` | `internal/federation/sourcesig.go:readSourceSignature` | every `"LOCK-SIG-FORM"` becomes `"LOCK-SIG-MEMBER"` | no |
+| `LOCK-SIG-UNEXPECTED-KEY` | error | `./internal/federation` | `TestEveryCodeIsRaisedByARow/LOCK-SIG-UNEXPECTED-KEY` | `internal/federation/sourcesig.go:check` | every `"LOCK-SIG-UNEXPECTED-KEY"` becomes `"LOCK-SIG-INVALID"` | no |
+| `LOCK-SIG-DIGEST-MISMATCH` | error | `./internal/federation` | `TestEveryCodeIsRaisedByARow/LOCK-SIG-DIGEST-MISMATCH` | `internal/federation/sourcesig.go:check` | every `"LOCK-SIG-DIGEST-MISMATCH"` becomes `"LOCK-SIG-INVALID"` | no |
+| `LOCK-SIG-INVALID` | error | `./internal/federation` | `TestEveryCodeIsRaisedByARow/LOCK-SIG-INVALID` | `internal/federation/sourcesig.go:check` | every `"LOCK-SIG-INVALID"` becomes `"LOCK-SIG-DIGEST-MISMATCH"` | no |
 
 ## Start-up module
 

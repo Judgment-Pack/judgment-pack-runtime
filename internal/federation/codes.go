@@ -43,11 +43,11 @@ var Codes = map[string]codeInfo{
 	"FED-VALUE-BOUND":               {SeverityError, "A resolved value fails a bound."},
 	"FED-INDEX-MISMATCH":            {SeverityError, "An index check finds a difference."},
 
-	// §12.2: locks and signatures, pending. The lock writer, lock checker and
-	// lock signature verifier classes (§15) are not built yet, so no reader
-	// of this module raises these codes. The mutation table holds a code
-	// under this heading to no row, and its check fails once a non-test file
-	// names one outside this table, or once no class is left to build.
+	// §12.2: locks, built. The lock writer (§§7, 8) and the lock checker (§9)
+	// raise these. A writer given an assembly verifies each source signature
+	// as §11 does before it names it (§8), and refuses one that does not
+	// verify with that signature's code, so the codes of reading and checking a
+	// signature document are raised here too.
 	"LOCK-EXPECTED":            {SeverityError, "An expected input is missing (the registry id, the index requirement, the environment for coverage, a repository source's key, or a floor at first contact); a repository key map is given without an index required, or the reverse; one key has two roles in the set, or the standard item's repository is one the map names; or the id is not an absolute URI."},
 	"LOCK-FORM":                {SeverityError, "The lock is not of its form, or a writer's next serial would be out of range."},
 	"LOCK-NOT-CANONICAL":       {SeverityError, "The lock's bytes are not its JCS bytes."},
@@ -64,9 +64,6 @@ var Codes = map[string]codeInfo{
 	"LOCK-EMITTER-MISSING":     {SeverityError, "The lock names emitters and none were given, or a manifest or file it lists was not given."},
 	"LOCK-EMITTER-MISMATCH":    {SeverityError, "An emitter manifest or owned file given differs from the lock's item, an owned file is absent from the lock, or a host check did not exit 0."},
 	"LOCK-NOT-COVERED":         {SeverityError, "A resolved registry is not of the expected environment, or not the one the lock names for it; or a file is not one the lock lists."},
-	"LOCK-SERIAL-ROLLBACK":     {SeverityError, "The lock's serial is below the verifier's record, or below its floor."},
-	"LOCK-SERIAL-CONFLICT":     {SeverityError, "The lock's serial is the record's and its digest is not."},
-	"LOCK-SERIAL-STATE":        {SeverityError, "The verifier's record exists and cannot be read or is not of its form, or cannot be written."},
 	"LOCK-SIG-EXPECTED-KEY":    {SeverityError, "An expected key is missing, or one a verifier may not trust."},
 	"LOCK-SIG-MISSING":         {SeverityError, "The lock signature, or an item's source signature, is not given."},
 	"LOCK-SIG-EXTRA":           {SeverityError, "A second lock signature is given, a source signature that no item expects or that is given twice, or more signature documents than the lock's sources count plus one."},
@@ -79,4 +76,13 @@ var Codes = map[string]codeInfo{
 	"LOCK-SIG-UNEXPECTED-KEY":  {SeverityError, "A document's key is not the key the expected set names for it."},
 	"LOCK-SIG-DIGEST-MISMATCH": {SeverityError, "The lock's bytes, or a source's statement, are not what the document names."},
 	"LOCK-SIG-INVALID":         {SeverityError, "A signature does not hold under its expected key."},
+
+	// §12.2: locks and signatures, pending. The lock signature verifier class
+	// (§15) is not built yet, so no reader of this module raises these codes:
+	// only its serial record (§11, Rollback) does. The mutation table holds a
+	// code under this heading to no row, and its check fails once a non-test
+	// file names one outside this table, or once no class is left to build.
+	"LOCK-SERIAL-ROLLBACK": {SeverityError, "The lock's serial is below the verifier's record, or below its floor."},
+	"LOCK-SERIAL-CONFLICT": {SeverityError, "The lock's serial is the record's and its digest is not."},
+	"LOCK-SERIAL-STATE":    {SeverityError, "The verifier's record exists and cannot be read or is not of its form, or cannot be written."},
 }

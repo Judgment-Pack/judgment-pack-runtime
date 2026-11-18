@@ -170,8 +170,8 @@ func checkFederationReport(t *testing.T, r federationRow, code int, stdout, stde
 // assembly with no error writes and one with an error does not.
 func TestRegistryAssembleRows(t *testing.T) {
 	rows := federationRowsOf(t, "assembler")
-	if len(rows) != 46 {
-		t.Fatalf("%d assembler rows, want 46", len(rows))
+	if len(rows) != 47 {
+		t.Fatalf("%d assembler rows, want 47", len(rows))
 	}
 	for _, r := range rows {
 		t.Run(r.ID, func(t *testing.T) {
