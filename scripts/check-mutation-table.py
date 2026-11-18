@@ -4,7 +4,7 @@
 The code set is read from the source, as the table's scope rule states, never listed here:
 the keys of `var Codes` in internal/registry/diag.go, of `var FactsCodes` in
 internal/registry/facts.go, of `var Codes` in internal/emit/codes.go and of `var Codes` in
-internal/federation/codes.go, but for its pending codes (see pending_problems); the names
+internal/federation/codes.go; the names
 `func Codes()` in internal/terraformfile/codes.go returns; every other constant in the module's
 non-test Go files whose value is a FACTS- code; and every constant in the non-test Go files of a
 cmd/jpack-emit-*/ package whose value is an x- code. A key or a name that is an identifier is
@@ -17,9 +17,7 @@ constant of the site's package that holds it, in that function's body outside it
 as a whole token, and B neither blank nor A, a row whose provisional column is not what the source
 marks (see provisional_marks), and a row whose test `go test -list` does not list in the row's package (for `TestX/sub`,
 the parent `TestX` must be listed, and a string literal in its body must name `sub` as `go test`
-prints it, spaces as underscores). A pending code has no row: the check fails on a row for one,
-on a non-test Go file that names one outside its table, and on a pending code left once
-internal/federation lists no class still to build. Run from the repository root. Standard library only; it runs
+prints it, spaces as underscores). No code is excused from a row. Run from the repository root. Standard library only; it runs
 `go test -list`, one package at a time.
 
 The start-up module (startup/) has a table of its own, derived from its source as well (see
@@ -264,69 +262,13 @@ def derive():
     return codes
 
 
-# Registry format 1.1.0 (proposed) is built a conformance class at a time. The codes of a class
-# not built yet are in their own section of internal/federation/codes.go, under a heading that
-# says pending, and rows_test.go lists the classes not built (pendingClasses), which TestRows
-# holds to the classes it runs. A pending code is in the code set and has no row, until its
-# class is built: then the code leaves the pending section, and needs one.
 FEDERATION_CODES = 'internal/federation/codes.go'
-FEDERATION_ROWS = 'internal/federation/rows_test.go'
-# The pending section's heading begins with this line, exactly: a heading that only mentions
-# pending somewhere else is not it.
-PENDING_HEADING = '// §12.2: locks and signatures, pending.'
 
 
-def pending_codes(text=None):
-    """The codes of `var Codes` in internal/federation/codes.go (or text, its source) under the
-    pending section's heading: one whose first sentence is PENDING_HEADING, exactly."""
-    return {code for code, heading in section_headings(FEDERATION_CODES, 'Codes', text).items()
-            if heading == PENDING_HEADING or heading.startswith(PENDING_HEADING + ' ')}
-
-
-def pending_classes(text=None):
-    """The classes `var pendingClasses` in internal/federation/rows_test.go (or text) lists."""
-    text = open(FEDERATION_ROWS, encoding='utf-8').read() if text is None else text
-    m = re.search(r'^var pendingClasses = \[\]string\{([^}]*)\}', text, re.M)
-    if not m:
-        refuse('%s: no var pendingClasses of one []string literal' % FEDERATION_ROWS)
-    return re.findall(r'"([^"\\]+)"', m.group(1))
-
-
-def without_table(text, name):
-    """text, a Go file's source, without its `var NAME = map[string]codeInfo{` table."""
-    m = re.search(r'^var %s = map\[string\]codeInfo\{\n.*?^\}\n' % name, text, re.M | re.S)
-    return text if m is None else text[:m.start()] + text[m.end():]
-
-
-def pending_problems(pending, classes, rows, sources):
-    """Why the pending codes are not held where they are, as a list: a pending code that rows (the
-    table's codes) has a row for; a pending code that a non-test Go file of sources ({path: text})
-    names, in a string literal, outside the code table; a literal there that builds a code of a
-    pending code's family at run time (its prefix, such as LOCK-, followed by a format verb or by
-    the literal's end, as "LOCK-" + x or "LOCK-%s" would); or a pending code at all, when
-    classes, the classes still to build, is empty."""
-    out = []
-    for code in sorted(pending & set(rows)):
-        out.append('%s: %s is pending, and pending codes have no row until their class is built' % (TABLE, code))
-    prefixes = sorted({code.split('-', 1)[0] + '-' for code in pending})
-    built = re.compile(r'(?<![A-Za-z0-9-])(%s)(?=%%|["`]$)' % '|'.join(map(re.escape, prefixes))) if prefixes else None
-    for path in sorted(sources):
-        text = without_table(sources[path], 'Codes') if path == FEDERATION_CODES else sources[path]
-        named, building = set(), set()
-        for literal in go_code(text, raw=True)[1]:
-            named.update(t for t in re.findall(r'[A-Za-z][A-Za-z0-9]*(?:-[A-Za-z0-9]+)+', literal) if t in pending)
-            if built is not None:
-                building.update(built.findall(literal))
-        for code in sorted(named):
-            out.append('%s names %s, a pending code: move it out of the pending section of %s, and give it a row'
-                       % (path, code, FEDERATION_CODES))
-        for prefix in sorted(building):
-            out.append('%s builds a %s code at run time, the family of pending codes: name a code in full, once its '
-                       'class is built' % (path, prefix))
-    if pending and not classes:
-        out.append('%s lists no class still to build, and %s holds %d pending codes: give each a row'
-                   % (FEDERATION_ROWS, FEDERATION_CODES, len(pending)))
-    return out
+def missing_rows(codes, seen):
+    """The codes of the code set (codes) that no row of the table (seen) holds, as problems: every
+    code has a row, and none is excused from one."""
+    return ['%s: %s has no row' % (TABLE, code) for code in sorted(set(codes) - set(seen))]
 
 
 def cells(line):
@@ -733,11 +675,7 @@ def main():
             problems.append('%s: the case %s names %s, not this code' % (where, row['test'], ', '.join(sorted(in_case))))
         elif not in_case and code not in named_codes(body, codes, names):
             problems.append('%s: %s does not name the code, as a literal or a constant holding it' % (where, parent))
-    pending = pending_codes()
-    for code in sorted(set(codes) - set(seen) - pending):
-        problems.append('%s: %s has no row' % (TABLE, code))
-    problems.extend(pending_problems(pending, pending_classes(), seen,
-                                     {p: open(p, encoding='utf-8').read() for p in module_files()}))
+    problems.extend(missing_rows(codes, seen))
     for package in sorted(tests):
         names = sorted(tests[package])
         listed = subprocess.run(['go', 'test', '-list', '^(' + '|'.join(names) + ')$', package], capture_output=True, text=True)
@@ -759,8 +697,8 @@ def main():
     if problems:
         print('mutation table: %d problems' % len(problems))
     else:
-        print('mutation table: %d rows, one for each code but %d pending, and %d start-up rows, one for each function '
-              'that uses a refusal or limit; every test is listed' % (len(rows), len(pending), len(startup_rows)))
+        print('mutation table: %d rows, one for each code, and %d start-up rows, one for each function '
+              'that uses a refusal or limit; every test is listed' % (len(rows), len(startup_rows)))
     sys.exit(1 if problems else 0)
 
 

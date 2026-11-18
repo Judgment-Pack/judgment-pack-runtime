@@ -210,50 +210,13 @@ expect('a mutant of an identifier its function does not hold is refused',
 expect('a test in a file built only outside Unix is declared', check.startup_listing({'TestReadFileRefusesEveryFileOutsideUnix': ['x']}) == [])
 expect('a test no file declares is refused', check.startup_listing({'TestNoSuchTestHere': ['x']}) != [])
 
-# Pending codes (registry 1.1.0's classes not built yet): no row, named by no non-test file outside
-# their table, and none left once no class is.
-federation_codes = open(check.FEDERATION_CODES, encoding='utf-8').read()
-pending = check.pending_codes(federation_codes)
-classes = check.pending_classes()
-expect('the pending codes are the LOCK- codes', pending != set() and all(c.startswith('LOCK-') for c in pending))
-expect('no FED- code is pending', not any(c.startswith('FED-') for c in pending))
-expect('the tree holds its pending codes', check.pending_problems(pending, classes, {}, {check.FEDERATION_CODES: federation_codes}) == [])
-lock = sorted(pending)[0]
-expect('a row for a pending code is refused', check.pending_problems(pending, classes, {lock: 1}, {}) != [])
-expect('a file that raises a pending code is refused',
-       check.pending_problems(pending, classes, {}, {'internal/federation/lock.go': 'func f() { add("%s", at) }' % lock}) != [])
-expect('a pending code in a comment is not raised',
-       check.pending_problems(pending, classes, {}, {'internal/federation/lock.go': '// add("%s")' % lock}) == [])
-expect('pending codes with no class left to build are refused', check.pending_problems(pending, [], {}, {}) != [])
-unmarked = federation_codes.replace('pending', 'built')
-expect('a section heading that does not say pending holds no pending code', check.pending_codes(unmarked) == set())
-expect('the pending heading is in the code table', check.PENDING_HEADING + ' ' in federation_codes.replace('\n\t//', ' //'))
-loose = federation_codes.replace(check.PENDING_HEADING, '// §12.2: locks and signatures, not yet pending.', 1)
-expect('the probe changes the pending heading', loose != federation_codes)
-expect('a heading that says pending but is not the pending heading holds no pending code', check.pending_codes(loose) == set())
-assembly_heading = '// §12.1: assembly, the assembled index and bounds.'
-mentions = federation_codes.replace(assembly_heading, assembly_heading[:-1] + ', none pending.', 1)
-expect('the probe makes another heading mention pending', mentions != federation_codes)
-expect('another heading that mentions pending holds no pending code', check.pending_codes(mentions) == pending)
-prefix = lock.split('-', 1)[0] + '-'
-for label, source in (
-        ('a concatenation', 'func f(x string) { add("%s" + x, at) }' % prefix),
-        ('a Sprintf', 'func f(x string) { add(fmt.Sprintf("%s%%s", x), at) }' % prefix),
-        ('a format with a verb after more text', 'func f(x string) { add(fmt.Sprintf("code %s%%v", x), at) }' % prefix),
-        ('a raw string concatenation', 'func f(x string) { add(`%s` + x, at) }' % prefix)):
-    expect('a file that builds a pending code at run time with %s is refused' % label,
-           any('at run time' in p for p in check.pending_problems(pending, classes, {}, {'internal/federation/lock.go': source})))
-expect('a pending prefix built only in a comment is not refused',
-       check.pending_problems(pending, classes, {}, {'internal/federation/lock.go': '// add("%s" + x)' % prefix}) == [])
-expect('a code of another family that ends in the prefix\'s letters is not refused',
-       check.pending_problems(pending, classes, {}, {'internal/federation/lock.go': 'x := "UNLOCK-" + y'}) == [])
-with contextlib.redirect_stderr(io.StringIO()):
-    try:
-        check.pending_classes('var pendingClasses []string')
-        refused = False
-    except SystemExit:
-        refused = True
-expect('a pendingClasses list that cannot be read is a refusal, not an empty list', refused)
+# Every code has a row: registry 1.1.0's are all built, and none is excused from one.
+serial = {'LOCK-SERIAL-ROLLBACK', 'LOCK-SERIAL-CONFLICT', 'LOCK-SERIAL-STATE'}
+expect('the serial record codes are in the code set', serial <= set(codes))
+expect('a code with no row is refused', check.missing_rows({'LOCK-SERIAL-STATE': 'error'}, {}) != [])
+expect('a code with a row is not refused', check.missing_rows({'LOCK-SERIAL-STATE': 'error'}, {'LOCK-SERIAL-STATE': 1}) == [])
+expect('no federation code is pending', 'pending' not in open(check.FEDERATION_CODES, encoding='utf-8').read())
+expect('the check keeps no pending list', not any(hasattr(check, name) for name in ('pending_codes', 'pending_classes', 'pending_problems')))
 
 for name in failures:
     print('mutation table probe: failed: ' + name, file=sys.stderr)

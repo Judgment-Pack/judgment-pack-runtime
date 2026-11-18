@@ -18,8 +18,8 @@ The rows follow from the source; nobody lists the codes by hand. The codes are:
   conformance harness's);
 - the constants `Codes()` in `internal/terraformfile/codes.go` returns (the `TF-*` codes);
 - the keys of `Codes` in `internal/federation/codes.go`, the codes of registry format 1.1.0
-  (proposed): the `FED-*` codes and the `LOCK-*` codes of the lock writer and the lock checker,
-  one row each, and the serial record's `LOCK-SERIAL-*` codes, which are pending (below);
+  (proposed): the `FED-*` codes and the `LOCK-*` codes of the lock writer, the lock checker and
+  the lock signature verifier, with its serial record's `LOCK-SERIAL-*` codes, one row each;
 - every constant in the non-test Go files of a `cmd/jpack-emit-*` package whose value is an `x-`
   code, the emitter's own diagnostic codes. `cmd/jpack-emit-go-facts` declares none: its refusals
   are fixed lines, not diagnostics, so it has no rows.
@@ -38,16 +38,9 @@ changed to expect another code, and holds the mutant and provisional rules to ch
 headings and comments. The check does not
 run the mutants; a reviewer does.
 
-Format 1.1.0 is built a conformance class at a time. The codes of the classes not built yet (the
-lock signature verifier, whose serial record alone raises the `LOCK-SERIAL-*` codes) are
-in a section of `internal/federation/codes.go` whose heading says pending, and
-`internal/federation/rows_test.go` lists those classes in `pendingClasses`, which `TestRows` holds
-to the classes it runs: a listed class that is built, or a class neither listed nor run, fails it.
-A pending code is in the code set and has no row. The check fails on a row for a pending code, on a
-non-test Go file that names one in a string literal outside the table (a code raised before it has
-a row), and on any pending code left once `pendingClasses` is empty. So the exemption ends with
-the last class: building it empties the list, and the check then wants a row for every code that
-was pending. The probes hold each of these.
+Format 1.1.0 was built a conformance class at a time; every class is built now, and no code is
+excused from a row. `internal/federation/rows_test.go` runs every row of every class, and the
+probes hold that a code with no row fails the check.
 
 ## Columns
 
@@ -257,6 +250,9 @@ was pending. The probes hold each of these.
 | `LOCK-EMITTER-MISMATCH` | error | `./internal/federation` | `TestEveryCodeIsRaisedByARow/LOCK-EMITTER-MISMATCH` | `internal/federation/lockcheck.go:checkEmitters` | every `"LOCK-EMITTER-MISMATCH"` becomes `"LOCK-EMITTER-MISSING"` | no |
 | `LOCK-NOT-COVERED` | error | `./internal/federation` | `TestEveryCodeIsRaisedByARow/LOCK-NOT-COVERED` | `internal/federation/lockcheck.go:Coverage` | every `"LOCK-NOT-COVERED"` becomes `"LOCK-EXPECTED"` | no |
 | `LOCK-SIG-EXPECTED-KEY` | error | `./internal/federation` | `TestEveryCodeIsRaisedByARow/LOCK-SIG-EXPECTED-KEY` | `internal/federation/sourcesig.go:signerProblems` | every `"LOCK-SIG-EXPECTED-KEY"` becomes `"LOCK-EXPECTED"` | no |
+| `LOCK-SERIAL-ROLLBACK` | error | `./internal/federation` | `TestEveryCodeIsRaisedByARow/LOCK-SERIAL-ROLLBACK` | `internal/federation/record.go:serialRule` | every `"LOCK-SERIAL-ROLLBACK"` becomes `"LOCK-SERIAL-CONFLICT"` | no |
+| `LOCK-SERIAL-CONFLICT` | error | `./internal/federation` | `TestEveryCodeIsRaisedByARow/LOCK-SERIAL-CONFLICT` | `internal/federation/record.go:serialRule` | every `"LOCK-SERIAL-CONFLICT"` becomes `"LOCK-SERIAL-ROLLBACK"` | no |
+| `LOCK-SERIAL-STATE` | error | `./internal/federation` | `TestEveryCodeIsRaisedByARow/LOCK-SERIAL-STATE` | `internal/federation/verify.go:state` | every `"LOCK-SERIAL-STATE"` becomes `"LOCK-EXPECTED"` | no |
 | `LOCK-SIG-MISSING` | error | `./internal/federation` | `TestEveryCodeIsRaisedByARow/LOCK-SIG-MISSING` | `internal/federation/sourcesig.go:sources` | every `"LOCK-SIG-MISSING"` becomes `"LOCK-SIG-EXTRA"` | no |
 | `LOCK-SIG-EXTRA` | error | `./internal/federation` | `TestEveryCodeIsRaisedByARow/LOCK-SIG-EXTRA` | `internal/federation/sourcesig.go:sources` | every `"LOCK-SIG-EXTRA"` becomes `"LOCK-SIG-MISSING"` | no |
 | `LOCK-SIG-DOCUMENT` | error | `./internal/federation` | `TestEveryCodeIsRaisedByARow/LOCK-SIG-DOCUMENT` | `internal/federation/sourcesig.go:readSourceSignature` | every `"LOCK-SIG-DOCUMENT"` becomes `"LOCK-SIG-MEMBER"` | no |

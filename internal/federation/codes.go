@@ -43,8 +43,8 @@ var Codes = map[string]codeInfo{
 	"FED-VALUE-BOUND":               {SeverityError, "A resolved value fails a bound."},
 	"FED-INDEX-MISMATCH":            {SeverityError, "An index check finds a difference."},
 
-	// §12.2: locks, built. The lock writer (§§7, 8) and the lock checker (§9)
-	// raise these. A writer given an assembly verifies each source signature
+	// §12.2: locks, built. The lock writer (§§7, 8), the lock checker (§9)
+	// and the lock signature verifier (§11) raise these. A writer given an assembly verifies each source signature
 	// as §11 does before it names it (§8), and refuses one that does not
 	// verify with that signature's code, so the codes of reading and checking a
 	// signature document are raised here too.
@@ -77,11 +77,8 @@ var Codes = map[string]codeInfo{
 	"LOCK-SIG-DIGEST-MISMATCH": {SeverityError, "The lock's bytes, or a source's statement, are not what the document names."},
 	"LOCK-SIG-INVALID":         {SeverityError, "A signature does not hold under its expected key."},
 
-	// §12.2: locks and signatures, pending. The lock signature verifier class
-	// (§15) is not built yet, so no reader of this module raises these codes:
-	// only its serial record (§11, Rollback) does. The mutation table holds a
-	// code under this heading to no row, and its check fails once a non-test
-	// file names one outside this table, or once no class is left to build.
+	// The serial record (§11, Rollback), which the lock signature verifier
+	// keeps.
 	"LOCK-SERIAL-ROLLBACK": {SeverityError, "The lock's serial is below the verifier's record, or below its floor."},
 	"LOCK-SERIAL-CONFLICT": {SeverityError, "The lock's serial is the record's and its digest is not."},
 	"LOCK-SERIAL-STATE":    {SeverityError, "The verifier's record exists and cannot be read or is not of its form, or cannot be written."},
