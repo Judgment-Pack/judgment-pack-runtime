@@ -65,7 +65,8 @@ jpack registry lock write --federation federation.json \
   --source standard=<commit>=checkouts/platform \
   --source billing=<commit>=checkouts/billing --no-known \
   --source-signature standard=standard.sig.json --source-signature billing=billing.sig.json \
-  --key <standard owner's key> --repository-key <billing's repository identity>=<its key> \
+  --standard-public-key <standard owner's public key> \
+  --repository-key <billing's repository identity>=<its public key> \
   --first-serial 1 --out assembled.lock.json
 
 jpack registry lock check --lock registry.lock.json --registry registry.json \
@@ -86,10 +87,11 @@ jpack registry lock coverage --lock registry.lock.json \
   default first serial. A previous lock at serial 9007199254740991 leaves no next serial
   (`LOCK-FORM`). A refused write prints `{"refused": [codes]}`, exits 1 and writes no lock; the
   lock goes to `--out`, by default `<name>.lock.json` beside a `<name>.json` input.
-- For an assembly, `write` verifies each source signature before naming it: by `--key`, the
-  standard owner's key, for the standard source, and by `--repository-key` for each repository,
-  over the statement rebuilt from the index. A signature that does not verify refuses the lock
-  with that signature's code. Keys are 64 lowercase hexadecimal characters, obtained out of band.
+- For an assembly, `write` verifies each source signature before naming it: by
+  `--standard-public-key`, the standard owner's public key, for the standard source, and by
+  `--repository-key` for each repository, over the statement rebuilt from the index. A signature
+  that does not verify refuses the lock with that signature's code. These are public keys, 64
+  lowercase hexadecimal characters obtained out of band, never a seed: no flag takes a seed inline.
 - An emitter is a checkout: `--emitter PATH=DIR` (`--source-emitter SOURCE=PATH=DIR` for an
   assembly) names the manifest's path and the directory holding it and the files its `owns`
   matches, which are found as the emit host's check mode finds them and read inside the
@@ -141,7 +143,7 @@ jpack registry lock verify --lock registry.lock.json \
   other source is read, so nothing here checks the assembly. Its document goes to `--output`.
   Neither command writes a document over anything.
 - The seed is read from the file `--key` names, and from nothing else: no flag or environment
-  variable carries a key. It is held to the rules a trail's signing key is held to: named by its
+  variable carries a seed. It is held to the rules a trail's signing key is held to: named by its
   real path with no symbolic link in it, one regular file with one name, on unix owned by the
   user the runtime runs as and readable by nobody else, in directories nobody else can write
   unless their sticky bit is set. On Windows a key's privacy cannot be checked, so no key signs
