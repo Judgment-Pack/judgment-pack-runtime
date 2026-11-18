@@ -1,13 +1,14 @@
 {
   "repository": "https://github.com/Judgment-Pack/judgment-pack-spec",
-  "release": "registry-v1.1.0 (not tagged)",
+  "release": "registry-v1.1.0",
   "pullRequest": [
     "https://github.com/Judgment-Pack/judgment-pack-spec/pull/383",
     "https://github.com/Judgment-Pack/judgment-pack-spec/pull/384",
     "https://github.com/Judgment-Pack/judgment-pack-spec/pull/386",
-    "https://github.com/Judgment-Pack/judgment-pack-spec/pull/387"
+    "https://github.com/Judgment-Pack/judgment-pack-spec/pull/387",
+    "https://github.com/Judgment-Pack/judgment-pack-spec/pull/389"
   ],
-  "revision": "adab5b267813de5e1012ebfcd94fdef87d407141",
+  "revision": "5f95fe86f2e664d116c6b59546d86cf1a063623a",
   "files": {
     "1.1.0/README.md": {
       "upstream": "conformance/registry/1.1.0/README.md",

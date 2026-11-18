@@ -18,7 +18,7 @@ All notable changes to tagged releases are documented here.
   serial record is written by compare and set under a lock file the runtime never removes once
   another verifier left it. On Windows the record's permissions are not checked and its directory
   is not synced (docs/registry-federation.md). Format `1.0.0` and every command that reads it are
-  unchanged. PLACEHOLDER(the rows' pin moves to the registry-v1.1.0 tag's commit)
+  unchanged. The rows are pinned to the commit the `registry-v1.1.0` tag names.
   The conformance claim in CONFORMANCE.md is unchanged.
 
 ## 0.52.0 - 2026-11-18
