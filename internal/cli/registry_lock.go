@@ -280,8 +280,12 @@ func (a *App) registryLockWriteCommand() *cobra.Command {
 			}
 			in := federation.WriteInput{}
 			if firstSerial != "" {
+				// An integer out of range is no serial of the lock's form, which
+				// the writer refuses (LOCK-FORM) in its report: ParseInt gives
+				// the nearest int64, itself out of range. Only text that is no
+				// integer is a usage error.
 				serial, err := strconv.ParseInt(firstSerial, 10, 64)
-				if err != nil {
+				if err != nil && !errors.Is(err, strconv.ErrRange) {
 					return usage("Give --first-serial as an integer.")
 				}
 				in.FirstSerial = &serial
@@ -318,10 +322,11 @@ func (a *App) registryLockWriteCommand() *cobra.Command {
 					}
 					in.SourceSignatures[parts[0]] = document
 				}
-				in.Signers = &federation.Signers{Key: key}
-				if len(repositoryKeys) > 0 {
-					in.Signers.Repositories = map[string]string{}
-				}
+				// The repository key map is the --repository-key flags, empty
+				// when none is given: an assembly of the standard source alone
+				// (§3) needs no repository's key, and a repository source the
+				// map does not name is still LOCK-EXPECTED (§11).
+				in.Signers = &federation.Signers{Key: key, Repositories: map[string]string{}}
 				for _, flag := range repositoryKeys {
 					at := strings.LastIndex(flag, "=")
 					if at <= 0 {

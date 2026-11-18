@@ -262,6 +262,11 @@ func TestWriterSignerSet(t *testing.T) {
 		"standard repository in": func(in *federation.WriteInput) {
 			in.Signers.Repositories["https://example.invalid/scm/platform"] = otherKey
 		},
+		// §11, One key, one role: one key given to two repository
+		// identities, though the lock names only one of them.
+		"one key for two repositories": func(in *federation.WriteInput) {
+			in.Signers.Repositories["https://example.invalid/scm/ledger"] = in.Signers.Repositories[billing]
+		},
 	} {
 		t.Run(name, func(t *testing.T) {
 			in := writeInput(t, r)
@@ -394,6 +399,29 @@ func TestWriterInputs(t *testing.T) {
 			var input *federation.InputError
 			if !errors.As(err, &input) || lock != nil {
 				t.Fatalf("got %s, %v; want an input error", lock, err)
+			}
+		})
+	}
+}
+
+// TestWriterSignatureAdmittedFirst holds the order in which a source
+// signature document is read: it is admitted by registry §2.2 under its
+// bound (§2) before its members are read (§11), so a number outside the
+// number rule refuses the document (LOCK-SIG-DOCUMENT) even in a member that
+// is not defined, which alone is LOCK-SIG-MEMBER.
+func TestWriterSignatureAdmittedFirst(t *testing.T) {
+	r := rowByID(t, "write-assembled")
+	for member, want := range map[string]string{
+		`"x":9007199254740993,`: "LOCK-SIG-DOCUMENT",
+		`"x":9007199254740991,`: "LOCK-SIG-MEMBER",
+	} {
+		t.Run(want, func(t *testing.T) {
+			in := writeInput(t, r)
+			data := in.SourceSignatures["billing"].Data
+			in.SourceSignatures["billing"] = registry.Document{Data: append([]byte("{"+member), data[1:]...)}
+			lock, err := federation.WriteLock(in)
+			if got := refusalCodes(t, err); !slices.Equal(got, []string{want}) || lock != nil {
+				t.Fatalf("refused %v, want [%s] and no lock", got, want)
 			}
 		})
 	}
