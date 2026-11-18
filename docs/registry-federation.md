@@ -1,4 +1,4 @@
-# Registry federation: assembly and the index check (proposed)
+# Registry federation: assembly, the index check and locks (proposed)
 
 **Status: proposed.** Registry format 1.1.0 is a proposed revision of the registry companion,
 not released, and nothing here is promised under `VERSIONING.md`. The commands and their output
@@ -9,9 +9,10 @@ Format 1.1.0 lets one registry be assembled from several sources: a standard, wh
 and states bounds, and repositories, which hold their own entries within those bounds. A
 federation manifest names each source, the repository identity and commit its bytes come from, the
 environments it serves, and the paths of its registry, its bounds and its kind declarations. This
-runtime builds the assembler and the index checker of the format (sections 1 to 6 and 12.1). The
-lock writer, the lock checker and the lock signature verifier are not built yet, and no command
-raises a `LOCK-*` code.
+runtime builds the assembler, the index checker, the lock writer and the lock checker of the
+format (sections 1 to 9 and 12). The lock signature verifier (the lock signature, the serial
+record and verification, sections 10 and 11) is not built yet: nothing raises its
+`LOCK-SERIAL-*` codes, and no command here says who signed a lock.
 
 ## Commands
 
@@ -52,12 +53,69 @@ Exit codes: 0 when the report has no error (warnings allowed), 1 when it has one
 line that cannot be used, and 4 for an input that cannot be read or an output that cannot be
 written.
 
+## Locks
+
+```
+jpack registry lock write --registry registry.json \
+  --kind kinds/database.json --kind kinds/db-role.json \
+  --previous registry.lock.json \
+  --emitter emitters/db-roles.json=. --emitter-check emitters/db-roles.json=0
+
+jpack registry lock write --federation federation.json \
+  --source standard=<commit>=checkouts/platform \
+  --source billing=<commit>=checkouts/billing --no-known \
+  --source-signature standard=standard.sig.json --source-signature billing=billing.sig.json \
+  --key <standard owner's key> --repository-key <billing's repository identity>=<its key> \
+  --first-serial 1 --out assembled.lock.json
+
+jpack registry lock check --lock registry.lock.json --registry registry.json \
+  --kind kinds/database.json --kind kinds/db-role.json \
+  --registry-id <registry id> --require-index false
+
+jpack registry lock coverage --lock registry.lock.json \
+  --registry-id <registry id> --require-index false --environment prod \
+  --resolved resolved-prod.json --file gen/grant.sh=gen/grant.sh
+```
+
+- A lock names its registry by digest, its kinds as pinned, the digest of each environment's
+  resolved registry, and, for an assembly, the index's digest and each source's statement and
+  accepted source signature, with the files each emitter writes. It is written as its RFC 8785
+  bytes; a lock re-formatted by hand is an edited lock (`LOCK-NOT-CANONICAL`).
+- `write` takes the serial one above the `--previous` lock's, which must be of the same registry
+  id, or the `--first-serial` given out of band. Neither or both is a usage error: there is no
+  default first serial. A previous lock at serial 9007199254740991 leaves no next serial
+  (`LOCK-FORM`). A refused write prints `{"refused": [codes]}`, exits 1 and writes no lock; the
+  lock goes to `--out`, by default `<name>.lock.json` beside a `<name>.json` input.
+- For an assembly, `write` verifies each source signature before naming it: by `--key`, the
+  standard owner's key, for the standard source, and by `--repository-key` for each repository,
+  over the statement rebuilt from the index. A signature that does not verify refuses the lock
+  with that signature's code. Keys are 64 lowercase hexadecimal characters, obtained out of band.
+- An emitter is a checkout: `--emitter PATH=DIR` (`--source-emitter SOURCE=PATH=DIR` for an
+  assembly) names the manifest's path and the directory holding it and the files its `owns`
+  matches, which are found as the emit host's check mode finds them and read inside the
+  directory; a symbolic link there is a read error. `write` is given the exit code of the host's
+  check of each emitter (`--emitter-check`) and runs nothing; any code but 0 is
+  `LOCK-EMITTER-MISMATCH`. On a file system that records no executable bit (Windows), emitters
+  and `coverage --file` are refused, since a file's mode cannot be read.
+- `check` holds the lock to the registry (validated), its kinds and resolved registries, the index
+  and its sources for a lock that names one, and the emitters for a lock that names them. The
+  expected registry id and index requirement (`--registry-id`, `--require-index`) have no default
+  and are never read from the lock: one not given is `LOCK-EXPECTED`. An index given for a lock
+  that names none is `LOCK-INDEX-UNLOCKED`, and one not given for a lock that names one is
+  `LOCK-INDEX-MISSING`: never a skipped check.
+- `coverage` says whether the lock covers a resolved registry (of the `--environment` given, and
+  the one the lock names for it) or a generated file (its path, its mode as on disk and its
+  digest, of `--file-source` in an assembled lock). Its report names no registry.
+- A check and coverage establish that bytes are the ones a lock names, not who wrote the lock:
+  that is verification, not built yet.
+
 ## Bounds
 
 Every input is read within a fixed bound, and a document over its bound is not parsed: a source's
 document, the manifest or the index is refused as `REG-DOC-SIZE`, and a known index or lock is
 an input error (see Readings). The bounds are the manifest and a bounds document 256 KiB each, a
-registry and an index 8 MiB, a kind declaration 256 KiB, a known lock 1 MiB. A manifest names at
+registry and an index 8 MiB, a kind declaration 256 KiB, a lock 1 MiB, a source signature 4 KiB,
+an emitter manifest 256 KiB and a generated file 16 MiB. A manifest names at
 most 256 sources, 4096 paths in all, 64 kind declarations per source and 32 environments; the
 known list holds at most 256 indexes and 256 locks. A bound lists at most 1024 values and 16
 patterns, and a `maxEntries` is at most 100000. A JSON document whose object repeats a member name
@@ -75,8 +133,16 @@ Where the text leaves a choice open and no row decides it, this reader reads it 
   (`REF-SECRET-SCOPE-SHARED`) against every earlier listing, not only the first;
 - a known index or lock that cannot be admitted fails the command as an input error (exit 4,
   no report), rather than naming no registry: read as naming nothing, it would let the source it
-  names pass as a repository's own instead of being refused as `FED-SOURCE-ASSEMBLED`.
+  names pass as a repository's own instead of being refused as `FED-SOURCE-ASSEMBLED`;
+- a writer is given each source signature by the source's name, and a document given for no
+  source is `LOCK-SIG-EXTRA`; a previous lock that is not admitted or not of its form, and a
+  first serial out of range, are `LOCK-FORM`;
+- an emitter manifest that is admitted but is not a valid emitter manifest is
+  `LOCK-EMITTER-MISMATCH`, since no host check of it exits 0;
+- emitters given for a lock that names none are not compared, and a file's source is not
+  compared for a single registry's lock;
+- an index item that is not of its form is `LOCK-SOURCES-MISMATCH` at the lock's item.
 
 The pinned rows are in `internal/federation/testdata/1.1.0`, with their provenance. Every
-assembler and index-checker row runs in that package and through both commands; the lock classes'
-rows are listed there as pending.
+assembler, index-checker, lock-writer and lock-checker row runs in that package and through the
+commands; the lock signature verifier's rows are listed there as pending.
